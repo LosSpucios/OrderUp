@@ -1,0 +1,7 @@
+{
+  "type":"minecraft:crafting_shaped",
+  "category":"building",
+  "pattern":["PPP"," S ","S S"],
+  "key":{"P":{"tag":"minecraft:planks"},"S":{"item":"minecraft:stick"}},
+  "result":{"id":"orderup:restaurant_table","count":1}
+}

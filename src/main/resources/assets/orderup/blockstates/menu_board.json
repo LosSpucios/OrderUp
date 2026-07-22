@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": {"model":"orderup:block/menu_board"},
+    "facing=east": {"model":"orderup:block/menu_board","y":90},
+    "facing=south": {"model":"orderup:block/menu_board","y":180},
+    "facing=west": {"model":"orderup:block/menu_board","y":270}
+  }
+}

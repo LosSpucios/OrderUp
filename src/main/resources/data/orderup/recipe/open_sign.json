@@ -1,0 +1,7 @@
+{
+  "type":"minecraft:crafting_shaped",
+  "category":"misc",
+  "pattern":[" S ","SES"," S "],
+  "key":{"S":{"item":"minecraft:stick"},"E":{"item":"minecraft:emerald"}},
+  "result":{"id":"orderup:open_sign","count":1}
+}

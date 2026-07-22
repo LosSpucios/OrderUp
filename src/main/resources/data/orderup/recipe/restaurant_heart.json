@@ -1,0 +1,7 @@
+{
+  "type":"minecraft:crafting_shaped",
+  "category":"misc",
+  "pattern":[" R ","DBD"," R "],
+  "key":{"R":{"item":"minecraft:redstone_block"},"D":{"item":"minecraft:diamond"},"B":{"item":"minecraft:barrel"}},
+  "result":{"id":"orderup:restaurant_heart","count":1}
+}

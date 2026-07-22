@@ -1,0 +1,13 @@
+{
+  "textures": {
+    "base": "minecraft:block/deepslate_tiles",
+    "wood": "minecraft:block/spruce_planks",
+    "core": "minecraft:block/redstone_block",
+    "particle": "minecraft:block/deepslate_tiles"
+  },
+  "elements": [
+    {"from":[2,0,2],"to":[14,4,14],"faces":{"down":{"texture":"#base"},"up":{"texture":"#base"},"north":{"texture":"#base"},"south":{"texture":"#base"},"west":{"texture":"#base"},"east":{"texture":"#base"}}},
+    {"from":[4,4,4],"to":[12,12,12],"faces":{"down":{"texture":"#wood"},"up":{"texture":"#wood"},"north":{"texture":"#wood"},"south":{"texture":"#wood"},"west":{"texture":"#wood"},"east":{"texture":"#wood"}}},
+    {"from":[6,7,2],"to":[10,11,4],"faces":{"north":{"texture":"#core"},"south":{"texture":"#core"},"west":{"texture":"#core"},"east":{"texture":"#core"},"up":{"texture":"#core"},"down":{"texture":"#core"}}}
+  ]
+}

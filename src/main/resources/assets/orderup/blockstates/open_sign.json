@@ -1,0 +1,12 @@
+{
+  "variants": {
+    "facing=north,open=true": {"model":"orderup:block/open_sign"},
+    "facing=east,open=true": {"model":"orderup:block/open_sign","y":90},
+    "facing=south,open=true": {"model":"orderup:block/open_sign","y":180},
+    "facing=west,open=true": {"model":"orderup:block/open_sign","y":270},
+    "facing=north,open=false": {"model":"orderup:block/open_sign"},
+    "facing=east,open=false": {"model":"orderup:block/open_sign","y":90},
+    "facing=south,open=false": {"model":"orderup:block/open_sign","y":180},
+    "facing=west,open=false": {"model":"orderup:block/open_sign","y":270}
+  }
+}

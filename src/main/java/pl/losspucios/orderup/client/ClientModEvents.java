@@ -1,0 +1,20 @@
+package pl.losspucios.orderup.client;
+
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.EntityRenderersEvent;
+import pl.losspucios.orderup.ModContent;
+import pl.losspucios.orderup.OrderUp;
+
+@EventBusSubscriber(modid = OrderUp.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.MOD)
+public final class ClientModEvents {
+    private ClientModEvents() {}
+
+    @SubscribeEvent
+    public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
+        event.registerEntityRenderer(ModContent.CUSTOMER.get(), CustomerRenderer::new);
+        event.registerBlockEntityRenderer(ModContent.MENU_BOARD_BE.get(), MenuBoardRenderer::new);
+        event.registerBlockEntityRenderer(ModContent.OPEN_SIGN_BE.get(), OpenSignRenderer::new);
+    }
+}

@@ -1,0 +1,7 @@
+{
+  "type":"minecraft:crafting_shaped",
+  "category":"misc",
+  "pattern":["PPP","PBP","PPP"],
+  "key":{"P":{"tag":"minecraft:planks"},"B":{"item":"minecraft:book"}},
+  "result":{"id":"orderup:menu_board","count":1}
+}

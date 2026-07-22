@@ -1,0 +1,7 @@
+{
+  "textures":{"wood":"minecraft:block/dark_oak_planks","paper":"minecraft:block/birch_planks","particle":"minecraft:block/dark_oak_planks"},
+  "elements":[
+    {"from":[1,0,1],"to":[15,3,15],"faces":{"down":{"texture":"#wood"},"up":{"texture":"#wood"},"north":{"texture":"#wood"},"south":{"texture":"#wood"},"west":{"texture":"#wood"},"east":{"texture":"#wood"}}},
+    {"from":[2,3,3],"to":[14,12,13],"rotation":{"origin":[8,3,8],"axis":"x","angle":-22.5},"faces":{"down":{"texture":"#paper"},"up":{"texture":"#paper"},"north":{"texture":"#paper"},"south":{"texture":"#paper"},"west":{"texture":"#paper"},"east":{"texture":"#paper"}}}
+  ]
+}

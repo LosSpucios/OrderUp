@@ -1,0 +1,10 @@
+{
+  "textures":{"wood":"minecraft:block/oak_planks","particle":"minecraft:block/oak_planks"},
+  "elements":[
+    {"from":[0,12,0],"to":[16,16,16],"faces":{"down":{"texture":"#wood"},"up":{"texture":"#wood"},"north":{"texture":"#wood"},"south":{"texture":"#wood"},"west":{"texture":"#wood"},"east":{"texture":"#wood"}}},
+    {"from":[2,0,2],"to":[5,12,5],"faces":{"down":{"texture":"#wood"},"up":{"texture":"#wood"},"north":{"texture":"#wood"},"south":{"texture":"#wood"},"west":{"texture":"#wood"},"east":{"texture":"#wood"}}},
+    {"from":[11,0,2],"to":[14,12,5],"faces":{"down":{"texture":"#wood"},"up":{"texture":"#wood"},"north":{"texture":"#wood"},"south":{"texture":"#wood"},"west":{"texture":"#wood"},"east":{"texture":"#wood"}}},
+    {"from":[2,0,11],"to":[5,12,14],"faces":{"down":{"texture":"#wood"},"up":{"texture":"#wood"},"north":{"texture":"#wood"},"south":{"texture":"#wood"},"west":{"texture":"#wood"},"east":{"texture":"#wood"}}},
+    {"from":[11,0,11],"to":[14,12,14],"faces":{"down":{"texture":"#wood"},"up":{"texture":"#wood"},"north":{"texture":"#wood"},"south":{"texture":"#wood"},"west":{"texture":"#wood"},"east":{"texture":"#wood"}}}
+  ]
+}
