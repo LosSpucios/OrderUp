@@ -138,7 +138,11 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
     }
 
     public void setMenuBoardPos(BlockPos pos) {
-        menuBoardPos = pos == null ? null : pos.immutable();
+        BlockPos newPos = pos == null ? null : pos.immutable();
+        if (java.util.Objects.equals(menuBoardPos, newPos)) {
+            return;
+        }
+        menuBoardPos = newPos;
         setChanged();
     }
 
@@ -168,16 +172,76 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
     }
 
     public boolean isMenuComplete(ServerLevel level) {
-        return menuBoardPos != null
-                && level.hasChunk(menuBoardPos.getX() >> 4, menuBoardPos.getZ() >> 4)
-                && level.getBlockEntity(menuBoardPos) instanceof MenuBoardBlockEntity menu
-                && menu.isFull();
+        MenuBoardBlockEntity linkedMenu = getLinkedMenu(level);
+        if (linkedMenu != null && linkedMenu.isFull()) {
+            ensureMenuLink(linkedMenu);
+            return true;
+        }
+
+        // Existing worlds can have a filled menu whose link to the Heart was lost.
+        // Search the restaurant area and repair the link automatically.
+        MenuBoardBlockEntity completeMenu = findMenuInRestaurant(level, true);
+        if (completeMenu != null) {
+            ensureMenuLink(completeMenu);
+            return true;
+        }
+
+        // Keep at least one incomplete menu linked, so the HUD changes to a checkmark
+        // immediately after its final slot is filled.
+        if (linkedMenu == null) {
+            MenuBoardBlockEntity anyMenu = findMenuInRestaurant(level, false);
+            if (anyMenu != null) {
+                ensureMenuLink(anyMenu);
+            }
+        }
+        return false;
+    }
+
+    private MenuBoardBlockEntity getLinkedMenu(ServerLevel level) {
+        if (menuBoardPos == null) {
+            return null;
+        }
+        if (!level.hasChunk(menuBoardPos.getX() >> 4, menuBoardPos.getZ() >> 4)) {
+            return null;
+        }
+        if (!level.getBlockState(menuBoardPos).is(ModContent.MENU_BOARD.get())) {
+            return null;
+        }
+        return level.getBlockEntity(menuBoardPos) instanceof MenuBoardBlockEntity menu ? menu : null;
+    }
+
+    private MenuBoardBlockEntity findMenuInRestaurant(ServerLevel level, boolean requireFull) {
+        int radius = getRadius();
+        int minY = Math.max(level.getMinBuildHeight(), worldPosition.getY() - 8);
+        int maxY = Math.min(level.getMaxBuildHeight() - 1, worldPosition.getY() + 8);
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+
+        for (int x = worldPosition.getX() - radius; x <= worldPosition.getX() + radius; x++) {
+            for (int z = worldPosition.getZ() - radius; z <= worldPosition.getZ() + radius; z++) {
+                for (int y = minY; y <= maxY; y++) {
+                    cursor.set(x, y, z);
+                    if (!level.getBlockState(cursor).is(ModContent.MENU_BOARD.get())) {
+                        continue;
+                    }
+                    if (level.getBlockEntity(cursor) instanceof MenuBoardBlockEntity menu
+                            && (!requireFull || menu.isFull())) {
+                        return menu;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private void ensureMenuLink(MenuBoardBlockEntity menu) {
+        BlockPos position = menu.getBlockPos();
+        menu.setRestaurantHeartPos(worldPosition);
+        setMenuBoardPos(position);
     }
 
     private void validateLinkedBlocks(ServerLevel level) {
         if (menuBoardPos != null && !level.getBlockState(menuBoardPos).is(ModContent.MENU_BOARD.get())) {
-            menuBoardPos = null;
-            setChanged();
+            setMenuBoardPos(null);
         }
         if (openSignPos != null && !level.getBlockState(openSignPos).is(ModContent.OPEN_SIGN.get())) {
             openSignPos = null;

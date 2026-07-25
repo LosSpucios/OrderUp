@@ -46,11 +46,8 @@ public class MenuBoardBlock extends BaseEntityBlock {
     @Override
     public void setPlacedBy(Level level, BlockPos pos, BlockState state, @Nullable LivingEntity placer, ItemStack stack) {
         super.setPlacedBy(level, pos, state, placer, stack);
-        if (!level.isClientSide
-                && level.getBlockEntity(pos) instanceof MenuBoardBlockEntity menu
-                && RestaurantManager.findContaining(level, pos).orElse(null) instanceof RestaurantHeartBlockEntity heart) {
-            menu.setRestaurantHeartPos(heart.getBlockPos());
-            heart.setMenuBoardPos(pos);
+        if (!level.isClientSide && level.getBlockEntity(pos) instanceof MenuBoardBlockEntity menu) {
+            linkToContainingRestaurant(level, pos, menu);
         }
     }
 
@@ -59,7 +56,7 @@ public class MenuBoardBlock extends BaseEntityBlock {
         if (level.isClientSide) return InteractionResult.SUCCESS;
         if (!(player instanceof ServerPlayer serverPlayer)) return InteractionResult.PASS;
         if (!(level.getBlockEntity(pos) instanceof MenuBoardBlockEntity menu)) return InteractionResult.PASS;
-        RestaurantHeartBlockEntity heart = RestaurantManager.findContaining(level, pos).orElse(null);
+        RestaurantHeartBlockEntity heart = linkToContainingRestaurant(level, pos, menu);
         if (heart == null || !heart.isMember(player.getUUID())) {
             player.displayClientMessage(net.minecraft.network.chat.Component.translatable("message.orderup.not_restaurant_member"), true);
             return InteractionResult.CONSUME;
@@ -75,6 +72,21 @@ public class MenuBoardBlock extends BaseEntityBlock {
             if (heart != null && pos.equals(heart.getMenuBoardPos())) heart.setMenuBoardPos(null);
         }
         super.onRemove(state, level, pos, newState, movedByPiston);
+    }
+
+    private static RestaurantHeartBlockEntity linkToContainingRestaurant(
+            Level level,
+            BlockPos menuPos,
+            MenuBoardBlockEntity menu
+    ) {
+        RestaurantHeartBlockEntity heart = RestaurantManager.findContaining(level, menuPos).orElse(null);
+        if (heart == null) {
+            return null;
+        }
+
+        menu.setRestaurantHeartPos(heart.getBlockPos());
+        heart.setMenuBoardPos(menuPos);
+        return heart;
     }
 
     @Override

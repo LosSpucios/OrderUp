@@ -150,6 +150,10 @@ public final class OrderUpNetworking {
             RestaurantHeartBlockEntity heart = RestaurantManager.findContaining(player.level(), payload.menuPos()).orElse(null);
             if (heart == null || !heart.isMember(player.getUUID())) return;
 
+            // Repair old or stale Heart <-> Menu links while editing the menu.
+            menu.setRestaurantHeartPos(heart.getBlockPos());
+            heart.setMenuBoardPos(menu.getBlockPos());
+
             ItemStack stack = ItemStack.EMPTY;
             if (!payload.itemId().isBlank()) {
                 ResourceLocation id = ResourceLocation.tryParse(payload.itemId());

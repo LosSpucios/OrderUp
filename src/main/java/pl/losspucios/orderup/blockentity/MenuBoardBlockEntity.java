@@ -77,7 +77,22 @@ public class MenuBoardBlockEntity extends BlockEntity {
     }
 
     public boolean isFull() {
-        return ghostItems.stream().noneMatch(ItemStack::isEmpty);
+        for (int slot = 0; slot < SLOT_COUNT; slot++) {
+            if (ghostItems.get(slot).isEmpty()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public int getFilledSlotCount() {
+        int filled = 0;
+        for (int slot = 0; slot < SLOT_COUNT; slot++) {
+            if (!ghostItems.get(slot).isEmpty()) {
+                filled++;
+            }
+        }
+        return filled;
     }
 
     public int getPrice(int slot, ServerLevel level) {
@@ -97,7 +112,11 @@ public class MenuBoardBlockEntity extends BlockEntity {
     }
 
     public void setRestaurantHeartPos(BlockPos pos) {
-        restaurantHeartPos = pos == null ? null : pos.immutable();
+        BlockPos newPos = pos == null ? null : pos.immutable();
+        if (java.util.Objects.equals(restaurantHeartPos, newPos)) {
+            return;
+        }
+        restaurantHeartPos = newPos;
         setChanged();
     }
 
