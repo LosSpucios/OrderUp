@@ -16,16 +16,23 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class MenuBoardScreen extends Screen {
+    private static final int GUI_WIDTH = 240;
+    private static final int GUI_HEIGHT = 282;
+    private static final int MENU_SLOT_SIZE = 22;
+
     private OrderUpNetworking.MenuDataPayload data;
     private final List<ItemStack> menuStacks = new ArrayList<>();
     private ItemStack draggedStack = ItemStack.EMPTY;
-    private int draggedInventorySlot = -1;
 
     public MenuBoardScreen(OrderUpNetworking.MenuDataPayload data) {
         super(Component.translatable("screen.orderup.menu"));
         applyPayload(data);
     }
 
+    /**
+     * Deliberately empty. The vanilla implementation is what requests the
+     * blurred in-world background. Order Up renders only its own subtle dim.
+     */
     @Override
     public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
     }
@@ -33,16 +40,23 @@ public class MenuBoardScreen extends Screen {
     public void applyPayload(OrderUpNetworking.MenuDataPayload payload) {
         this.data = payload;
         menuStacks.clear();
+
         for (String idString : payload.itemIds()) {
             if (idString.isBlank()) {
                 menuStacks.add(ItemStack.EMPTY);
                 continue;
             }
+
             ResourceLocation id = ResourceLocation.tryParse(idString);
             Item item = id == null ? null : BuiltInRegistries.ITEM.get(id);
-            menuStacks.add(item == null || item == net.minecraft.world.item.Items.AIR ? ItemStack.EMPTY : new ItemStack(item));
+            menuStacks.add(item == null || item == net.minecraft.world.item.Items.AIR
+                    ? ItemStack.EMPTY
+                    : new ItemStack(item));
         }
-        while (menuStacks.size() < MenuBoardBlockEntity.SLOT_COUNT) menuStacks.add(ItemStack.EMPTY);
+
+        while (menuStacks.size() < MenuBoardBlockEntity.SLOT_COUNT) {
+            menuStacks.add(ItemStack.EMPTY);
+        }
     }
 
     public BlockPos getMenuPos() {
@@ -51,63 +65,88 @@ public class MenuBoardScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        graphics.fill(0, 0, width, height, 0x55000000);
-        int left = (width - 330) / 2;
-        int top = (height - 250) / 2;
+        // Dim only. No call to renderBackground(), therefore no vanilla blur.
+        graphics.fill(0, 0, width, height, 0x66000000);
 
-        graphics.fill(left, top, left + 330, top + 250, 0xFFD6B777);
-        graphics.fill(left + 8, top + 8, left + 322, top + 242, 0xFFF7E9C9);
-        graphics.drawCenteredString(font, Component.translatable("screen.orderup.menu"), left + 165, top + 17, 0xFF3F2D20);
+        int left = (width - GUI_WIDTH) / 2;
+        int top = (height - GUI_HEIGHT) / 2;
 
-        graphics.drawString(font, Component.translatable("screen.orderup.food"), left + 28, top + 43, 0xFF4B3321, false);
-        for (int i = 0; i < 4; i++) renderMenuSlot(graphics, left + 28 + i * 64, top + 58, i, mouseX, mouseY);
+        renderPanel(graphics, left, top);
 
-        graphics.drawString(font, Component.translatable("screen.orderup.drinks"), left + 28, top + 106, 0xFF4B3321, false);
-        for (int i = 0; i < 2; i++) renderMenuSlot(graphics, left + 28 + i * 64, top + 121, 4 + i, mouseX, mouseY);
+        graphics.drawCenteredString(font, Component.literal("MENU"), left + GUI_WIDTH / 2, top + 13, 0xFF3B2618);
 
-        graphics.drawString(font, Component.translatable("screen.orderup.inventory_hint"), left + 28, top + 164, 0xFF6A5140, false);
-        renderInventory(graphics, left + 28, top + 180, mouseX, mouseY);
+        graphics.drawString(font, Component.literal("Food"), left + 20, top + 35, 0xFF553824, false);
+        for (int i = 0; i < MenuBoardBlockEntity.FOOD_SLOTS; i++) {
+            renderMenuSlot(graphics, foodSlotX(left, i), top + 50, i, mouseX, mouseY);
+        }
 
+        graphics.drawString(font, Component.literal("Drinks"), left + 20, top + 92, 0xFF553824, false);
+        for (int i = 0; i < MenuBoardBlockEntity.DRINK_SLOTS; i++) {
+            renderMenuSlot(graphics, drinkSlotX(left, i), top + 107, MenuBoardBlockEntity.FOOD_SLOTS + i, mouseX, mouseY);
+        }
+
+        // Kept deliberately short so it never leaves the GUI at larger GUI scales.
+        graphics.drawCenteredString(font, Component.literal("Drag items from your inventory into the menu."), left + GUI_WIDTH / 2, top + 146, 0xFF6A5140);
+        graphics.drawCenteredString(font, Component.literal("Right-click a menu slot to remove it."), left + GUI_WIDTH / 2, top + 157, 0xFF6A5140);
+
+        graphics.fill(left + 12, top + 174, left + GUI_WIDTH - 12, top + 175, 0xFFB99A68);
+        graphics.drawString(font, Component.literal("Inventory"), left + 39, top + 181, 0xFF553824, false);
+
+        if (minecraft != null && minecraft.player != null) {
+            int inventoryX = left + (GUI_WIDTH - VanillaInventoryPanel.WIDTH) / 2;
+            int inventoryY = top + 194;
+            VanillaInventoryPanel.render(
+                    graphics,
+                    font,
+                    minecraft.player.getInventory(),
+                    inventoryX,
+                    inventoryY,
+                    mouseX,
+                    mouseY,
+                    draggedStack.isEmpty()
+            );
+        }
+
+        // Render Screen widgets (there currently are none) without invoking a background.
         super.render(graphics, mouseX, mouseY, partialTick);
+
         if (!draggedStack.isEmpty()) {
             graphics.renderItem(draggedStack, mouseX - 8, mouseY - 8);
+            graphics.renderItemDecorations(font, draggedStack, mouseX - 8, mouseY - 8);
         }
+    }
+
+    private void renderPanel(GuiGraphics graphics, int left, int top) {
+        // Warm wood frame + parchment interior.
+        graphics.fill(left, top, left + GUI_WIDTH, top + GUI_HEIGHT, 0xFF5A3823);
+        graphics.fill(left + 3, top + 3, left + GUI_WIDTH - 3, top + GUI_HEIGHT - 3, 0xFFD7B77B);
+        graphics.fill(left + 7, top + 7, left + GUI_WIDTH - 7, top + GUI_HEIGHT - 7, 0xFFF4E5C5);
+
+        // Small header plate.
+        graphics.fill(left + 78, top + 8, left + 162, top + 28, 0xFFE4C98F);
+        graphics.fill(left + 78, top + 27, left + 162, top + 29, 0xFFC39B5C);
     }
 
     private void renderMenuSlot(GuiGraphics graphics, int x, int y, int slot, int mouseX, int mouseY) {
-        boolean hovered = mouseX >= x && mouseX <= x + 20
-                && mouseY >= y && mouseY <= y + 20;
+        boolean hovered = isInside(mouseX, mouseY, x, y, MENU_SLOT_SIZE, MENU_SLOT_SIZE);
+        boolean validDrop = hovered && !draggedStack.isEmpty() && isValidForSlot(draggedStack, slot)
+                && !isItemAlreadyInMenu(draggedStack, slot);
 
-        int border = hovered && !draggedStack.isEmpty()
-                ? 0xFFF0B43A
-                : 0xFF8B684B;
-        graphics.fill(x - 2, y - 2, x + 22, y + 22, border);
-        graphics.fill(x, y, x + 20, y + 20, 0xFFEAD9B7);
+        int frame = validDrop ? 0xFF6BAA55 : hovered ? 0xFFD6A548 : 0xFF79543A;
+        graphics.fill(x - 2, y - 2, x + MENU_SLOT_SIZE + 2, y + MENU_SLOT_SIZE + 2, frame);
+        graphics.fill(x, y, x + MENU_SLOT_SIZE, y + MENU_SLOT_SIZE, 0xFFE9D7B3);
+        graphics.fill(x + 2, y + 2, x + MENU_SLOT_SIZE - 2, y + MENU_SLOT_SIZE - 2, 0xFFCDB88E);
+
         ItemStack stack = menuStacks.get(slot);
-        if (!stack.isEmpty()) graphics.renderItem(stack, x + 2, y + 2);
-        String price = data.prices().size() > slot ? "$" + data.prices().get(slot) : "$0";
-        graphics.drawCenteredString(font, price, x + 10, y + 25, 0xFF3D713B);
-        if (draggedStack.isEmpty()
-                && mouseX >= x && mouseX <= x + 20
-                && mouseY >= y && mouseY <= y + 20
-                && !stack.isEmpty()) {
-            graphics.renderTooltip(font, stack, mouseX, mouseY);
+        if (!stack.isEmpty()) {
+            graphics.renderItem(stack, x + 3, y + 3);
         }
-    }
 
-    private void renderInventory(GuiGraphics graphics, int startX, int startY, int mouseX, int mouseY) {
-        if (minecraft == null || minecraft.player == null) return;
-        for (int i = 0; i < 36; i++) {
-            int col = i % 9;
-            int row = i / 9;
-            int x = startX + col * 30;
-            int y = startY + row * 18;
-            ItemStack stack = minecraft.player.getInventory().getItem(i);
-            graphics.fill(x, y, x + 18, y + 18, 0x55785D45);
-            if (!stack.isEmpty()) graphics.renderItem(stack, x + 1, y + 1);
-            if (mouseX >= x && mouseX <= x + 18 && mouseY >= y && mouseY <= y + 18 && !stack.isEmpty()) {
-                graphics.renderTooltip(font, stack, mouseX, mouseY);
-            }
+        String price = data.prices().size() > slot ? "$" + data.prices().get(slot) : "$0";
+        graphics.drawCenteredString(font, price, x + MENU_SLOT_SIZE / 2, y + MENU_SLOT_SIZE + 5, 0xFF3D713B);
+
+        if (draggedStack.isEmpty() && hovered && !stack.isEmpty()) {
+            graphics.renderTooltip(font, stack, mouseX, mouseY);
         }
     }
 
@@ -115,31 +154,28 @@ public class MenuBoardScreen extends Screen {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         int menuSlot = getMenuSlotAt(mouseX, mouseY);
 
-        // PPM usuwa item z menu.
+        // Right click removes a ghost item from the menu.
         if (button == 1 && menuSlot >= 0) {
             PacketDistributor.sendToServer(
-                    new OrderUpNetworking.SetMenuSlotPayload(
-                            data.menuPos(),
-                            menuSlot,
-                            ""
-                    )
+                    new OrderUpNetworking.SetMenuSlotPayload(data.menuPos(), menuSlot, "")
             );
-
             return true;
         }
 
-        // Przeciąganie działa tylko LPM.
+        // Dragging can only start from the player's inventory with the left mouse button.
         if (button != 0 || minecraft == null || minecraft.player == null) {
             return super.mouseClicked(mouseX, mouseY, button);
         }
 
-        int inventorySlot = getInventorySlotAt(mouseX, mouseY);
+        int left = (width - GUI_WIDTH) / 2;
+        int top = (height - GUI_HEIGHT) / 2;
+        int inventoryX = left + (GUI_WIDTH - VanillaInventoryPanel.WIDTH) / 2;
+        int inventoryY = top + 194;
+        int inventorySlot = VanillaInventoryPanel.getInventorySlotAt(mouseX, mouseY, inventoryX, inventoryY);
 
         if (inventorySlot >= 0) {
             ItemStack stack = minecraft.player.getInventory().getItem(inventorySlot);
-
             if (!stack.isEmpty()) {
-                draggedInventorySlot = inventorySlot;
                 draggedStack = stack.copyWithCount(1);
                 return true;
             }
@@ -149,17 +185,10 @@ public class MenuBoardScreen extends Screen {
     }
 
     @Override
-    public boolean mouseDragged(
-            double mouseX,
-            double mouseY,
-            int button,
-            double dragX,
-            double dragY
-    ) {
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
         if (button == 0 && !draggedStack.isEmpty()) {
             return true;
         }
-
         return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
@@ -168,92 +197,79 @@ public class MenuBoardScreen extends Screen {
         if (button == 0 && !draggedStack.isEmpty()) {
             int targetSlot = getMenuSlotAt(mouseX, mouseY);
 
-            if (targetSlot >= 0) {
-                boolean valid = targetSlot < MenuBoardBlockEntity.FOOD_SLOTS
-                        ? MenuBoardBlockEntity.isFood(draggedStack)
-                        : MenuBoardBlockEntity.isDrink(draggedStack);
-
-                if (valid && !isItemAlreadyInMenu(draggedStack, targetSlot)) {
-                    String id = BuiltInRegistries.ITEM
-                            .getKey(draggedStack.getItem())
-                            .toString();
-
-                    PacketDistributor.sendToServer(
-                            new OrderUpNetworking.SetMenuSlotPayload(
-                                    data.menuPos(),
-                                    targetSlot,
-                                    id
-                            )
-                    );
-                }
+            if (targetSlot >= 0
+                    && isValidForSlot(draggedStack, targetSlot)
+                    && !isItemAlreadyInMenu(draggedStack, targetSlot)) {
+                String id = BuiltInRegistries.ITEM.getKey(draggedStack.getItem()).toString();
+                PacketDistributor.sendToServer(
+                        new OrderUpNetworking.SetMenuSlotPayload(data.menuPos(), targetSlot, id)
+                );
             }
 
             draggedStack = ItemStack.EMPTY;
-            draggedInventorySlot = -1;
-
             return true;
         }
 
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
-    private int getMenuSlotAt(double mouseX, double mouseY) {
-        int left = (width - 330) / 2;
-        int top = (height - 250) / 2;
-
-        for (int slot = 0; slot < MenuBoardBlockEntity.SLOT_COUNT; slot++) {
-            int x = slot < 4
-                    ? left + 28 + slot * 64
-                    : left + 28 + (slot - 4) * 64;
-
-            int y = slot < 4
-                    ? top + 58
-                    : top + 121;
-
-            if (mouseX >= x && mouseX <= x + 20
-                    && mouseY >= y && mouseY <= y + 20) {
-                return slot;
-            }
-        }
-
-        return -1;
+    @Override
+    public void removed() {
+        draggedStack = ItemStack.EMPTY;
+        super.removed();
     }
 
-    private int getInventorySlotAt(double mouseX, double mouseY) {
-        int left = (width - 330) / 2;
-        int top = (height - 250) / 2;
+    private int getMenuSlotAt(double mouseX, double mouseY) {
+        int left = (width - GUI_WIDTH) / 2;
+        int top = (height - GUI_HEIGHT) / 2;
 
-        int startX = left + 28;
-        int startY = top + 180;
-
-        for (int i = 0; i < 36; i++) {
-            int x = startX + (i % 9) * 30;
-            int y = startY + (i / 9) * 18;
-
-            if (mouseX >= x && mouseX <= x + 18
-                    && mouseY >= y && mouseY <= y + 18) {
+        for (int i = 0; i < MenuBoardBlockEntity.FOOD_SLOTS; i++) {
+            int x = foodSlotX(left, i);
+            int y = top + 50;
+            if (isInside(mouseX, mouseY, x, y, MENU_SLOT_SIZE, MENU_SLOT_SIZE)) {
                 return i;
             }
         }
 
+        for (int i = 0; i < MenuBoardBlockEntity.DRINK_SLOTS; i++) {
+            int x = drinkSlotX(left, i);
+            int y = top + 107;
+            if (isInside(mouseX, mouseY, x, y, MENU_SLOT_SIZE, MENU_SLOT_SIZE)) {
+                return MenuBoardBlockEntity.FOOD_SLOTS + i;
+            }
+        }
+
         return -1;
+    }
+
+    private int foodSlotX(int left, int index) {
+        return left + 27 + index * 53;
+    }
+
+    private int drinkSlotX(int left, int index) {
+        return left + 80 + index * 53;
+    }
+
+    private boolean isValidForSlot(ItemStack stack, int slot) {
+        return slot < MenuBoardBlockEntity.FOOD_SLOTS
+                ? MenuBoardBlockEntity.isFood(stack)
+                : MenuBoardBlockEntity.isDrink(stack);
     }
 
     private boolean isItemAlreadyInMenu(ItemStack stack, int targetSlot) {
         for (int i = 0; i < menuStacks.size(); i++) {
-            if (i == targetSlot) {
-                continue;
-            }
+            if (i == targetSlot) continue;
 
             ItemStack existing = menuStacks.get(i);
-
-            if (!existing.isEmpty()
-                    && existing.getItem() == stack.getItem()) {
+            if (!existing.isEmpty() && existing.getItem() == stack.getItem()) {
                 return true;
             }
         }
-
         return false;
+    }
+
+    private static boolean isInside(double mouseX, double mouseY, int x, int y, int width, int height) {
+        return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
     }
 
     @Override

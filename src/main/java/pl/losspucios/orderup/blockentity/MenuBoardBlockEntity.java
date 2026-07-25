@@ -49,29 +49,22 @@ public class MenuBoardBlockEntity extends BlockEntity {
             return false;
         }
 
-        ItemStack normalized = stack.isEmpty()
-                ? ItemStack.EMPTY
-                : stack.copyWithCount(1);
+        ItemStack normalized = stack.isEmpty() ? ItemStack.EMPTY : stack.copyWithCount(1);
 
         if (!normalized.isEmpty()) {
             if (slot < FOOD_SLOTS && !isFood(normalized)) {
                 return false;
             }
-
             if (slot >= FOOD_SLOTS && !isDrink(normalized)) {
                 return false;
             }
 
-            // Ten sam item nie może być w dwóch różnych slotach.
+            // The same item may only appear once in the whole menu.
             for (int i = 0; i < SLOT_COUNT; i++) {
-                if (i == slot) {
-                    continue;
-                }
+                if (i == slot) continue;
 
                 ItemStack existing = ghostItems.get(i);
-
-                if (!existing.isEmpty()
-                        && existing.getItem() == normalized.getItem()) {
+                if (!existing.isEmpty() && existing.getItem() == normalized.getItem()) {
                     return false;
                 }
             }
@@ -80,7 +73,6 @@ public class MenuBoardBlockEntity extends BlockEntity {
         ghostItems.set(slot, normalized);
         setChanged();
         syncToClient();
-
         return true;
     }
 

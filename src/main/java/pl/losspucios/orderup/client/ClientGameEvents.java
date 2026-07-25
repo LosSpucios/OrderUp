@@ -21,8 +21,10 @@ public final class ClientGameEvents {
     @SubscribeEvent
     public static void renderHud(RenderGuiEvent.Post event) {
         if (!ClientRestaurantState.hudActive()) return;
+
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.options.hideGui) return;
+
         var graphics = event.getGuiGraphics();
         int width = graphics.guiWidth();
         int height = graphics.guiHeight();
@@ -34,25 +36,29 @@ public final class ClientGameEvents {
         int y = height / 2 - 60;
         int h = 120;
         graphics.fill(x, y, x + 8, y + h, 0xAA2A241E);
+
         double progress = Math.min(1.0D, ClientRestaurantState.xp() / (double) Math.max(1, ClientRestaurantState.nextXp()));
         int filled = (int) Math.round(h * progress);
         if (filled > 0) {
             graphics.fill(x + 1, y + h - filled, x + 7, y + h - 1, 0xFF73B85D);
         }
+
         graphics.drawString(minecraft.font, "Lv." + ClientRestaurantState.level(), x - 24, y - 10, 0xFFFFFFFF, true);
     }
 
     @SubscribeEvent
     public static void renderRestaurantBorder(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
+
         BlockPos heart = ClientRestaurantState.borderHeart();
         if (heart == null) return;
 
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null) return;
+
         int radius = ClientRestaurantState.borderRadius();
-        Vec3 camera = event.getCamera().getPosition();
         int verticalHeight = 8;
+        Vec3 camera = event.getCamera().getPosition();
 
         AABB box = new AABB(
                 heart.getX() - radius,

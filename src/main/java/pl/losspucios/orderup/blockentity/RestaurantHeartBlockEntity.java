@@ -195,8 +195,16 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
             if (customer == null) return;
             customer.moveTo(spawnPos.getX() + 0.5D, spawnPos.getY(), spawnPos.getZ() + 0.5D, level.random.nextFloat() * 360.0F, 0.0F);
             customer.setRestaurantContext(worldPosition, chair, menuBoardPos);
-            if (!level.noCollision(customer) || !customer.beginWalkingToChair()) continue;
+
+            if (!level.noCollision(customer)) continue;
+
+            // Add the entity first. Navigation/pathfinding is more reliable once the mob is part of the level.
             level.addFreshEntity(customer);
+            if (!customer.beginWalkingToChair()) {
+                customer.discard();
+                continue;
+            }
+
             return;
         }
     }

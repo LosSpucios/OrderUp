@@ -1,6 +1,7 @@
 package pl.losspucios.orderup.entity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
@@ -101,11 +102,35 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
     public boolean beginWalkingToChair() {
         BlockPos chair = getTargetChair();
         if (chair == null) return false;
-        Path path = getNavigation().createPath(chair, 0);
-        if (path == null || !path.canReach()) return false;
+
+        Path bestPath = null;
+        double bestDistance = Double.MAX_VALUE;
+
+        // A chair is a solid block, so pathfinding to the chair block itself often fails.
+        // Instead, pathfind to the closest safe horizontal block next to it.
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            BlockPos approachPos = chair.relative(direction);
+            BlockPos above = approachPos.above();
+
+            if (!level().getBlockState(approachPos).getCollisionShape(level(), approachPos).isEmpty()) continue;
+            if (!level().getBlockState(above).getCollisionShape(level(), above).isEmpty()) continue;
+
+            Path path = getNavigation().createPath(approachPos, 0);
+            if (path == null || !path.canReach()) continue;
+
+            double distance = approachPos.distSqr(blockPosition());
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestPath = path;
+            }
+        }
+
+        if (bestPath == null) return false;
+
         lastProgressX = getX();
         lastProgressZ = getZ();
-        getNavigation().moveTo(path, 0.55D);
+        stuckTicks = 0;
+        getNavigation().moveTo(bestPath, 0.55D);
         return true;
     }
 
@@ -115,8 +140,10 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         if (level().isClientSide) return;
         ServerLevel level = (ServerLevel) level();
         BlockPos heartPos = getRestaurantHeart();
+
+        // A customer spawned manually with /summon has no restaurant context.
+        // Keep it alive for testing instead of deleting it on its first server tick.
         if (heartPos == null) {
-            discard();
             return;
         }
 
@@ -198,12 +225,7 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
             seat.setInvisible(true);
             seat.setInvulnerable(true);
             seat.setNoGravity(true);
-            seat.setPos(
-                    chair.getX() + 0.5D,
-                    chair.getY() - 0.55D,
-                    chair.getZ() + 0.5D
-            );
-
+            seat.setPos(chair.getX() + 0.5D, chair.getY() - 0.55D, chair.getZ() + 0.5D);
             level.addFreshEntity(seat);
             seatUuid = seat.getUUID();
             startRiding(seat, true);
@@ -371,7 +393,7 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
     }
 
     @Override
-    public boolean removeWhenFarAway(double distance) {
+    public boolean removeWhenFarAway(double distanceToClosestPlayer) {
         return false;
     }
 

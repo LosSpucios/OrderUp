@@ -1,11 +1,12 @@
 package pl.losspucios.orderup.client;
 
-import net.minecraft.core.BlockPos;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
 
 public final class ClientRestaurantState {
     private static int hudRadius;
     private static int hudVertical = 8;
+
     private static BlockPos hudHeart;
     private static long money;
     private static int xp;
@@ -29,7 +30,9 @@ public final class ClientRestaurantState {
         hudVertical = 8;
 
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.level != null) lastHudTick = minecraft.level.getGameTime();
+        if (minecraft.level != null) {
+            lastHudTick = minecraft.level.getGameTime();
+        }
     }
 
     public static boolean hudActive() {
@@ -43,7 +46,6 @@ public final class ClientRestaurantState {
         }
 
         BlockPos playerPos = minecraft.player.blockPosition();
-
         return Math.abs(playerPos.getX() - hudHeart.getX()) <= hudRadius
                 && Math.abs(playerPos.getZ() - hudHeart.getZ()) <= hudRadius
                 && Math.abs(playerPos.getY() - hudHeart.getY()) <= hudVertical;
