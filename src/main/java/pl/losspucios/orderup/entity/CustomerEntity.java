@@ -5,6 +5,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
@@ -32,6 +33,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.pathfinder.Path;
 import pl.losspucios.orderup.ModContent;
+import pl.losspucios.orderup.ModParticles;
 import pl.losspucios.orderup.blockentity.MenuBoardBlockEntity;
 import pl.losspucios.orderup.blockentity.RestaurantHeartBlockEntity;
 import pl.losspucios.orderup.restaurant.RestaurantManager;
@@ -45,10 +47,11 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
     public static final int THINKING = 1;
     public static final int WAITING = 2;
     public static final int LEAVING = 3;
+    public static final int REACTING = 5;
 
-    // Kept only for loading worlds made with the earlier implementation,
-    // where angry was stored as CustomerState=4 instead of a separate mood.
+    // In the old save format CustomerState=4 meant angry. Mood is now stored separately.
     private static final int LEGACY_ANGRY_STATE = 4;
+    private static final int RESULT_DISPLAY_TICKS = 40;
 
     private static final EntityDataAccessor<Integer> DATA_STATE = SynchedEntityData.defineId(CustomerEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Integer> DATA_MOOD = SynchedEntityData.defineId(CustomerEntity.class, EntityDataSerializers.INT);
@@ -58,6 +61,7 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
     private static final EntityDataAccessor<ItemStack> DATA_DRINK = SynchedEntityData.defineId(CustomerEntity.class, EntityDataSerializers.ITEM_STACK);
     private static final EntityDataAccessor<Boolean> DATA_FOOD_DONE = SynchedEntityData.defineId(CustomerEntity.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<Boolean> DATA_DRINK_DONE = SynchedEntityData.defineId(CustomerEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Boolean> DATA_ORDER_FAILED = SynchedEntityData.defineId(CustomerEntity.class, EntityDataSerializers.BOOLEAN);
 
     private BlockPos menuBoardPos;
     private int orderPrice;
@@ -66,11 +70,11 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
     private double lastProgressX;
     private double lastProgressZ;
     private UUID seatUuid;
+    private boolean angryRewardClaimed;
     private VillagerData villagerData = new VillagerData(VillagerType.PLAINS, VillagerProfession.NONE, 1);
 
     public CustomerEntity(EntityType<? extends CustomerEntity> type, Level level) {
         super(type, level);
-        setPersistenceRequired();
     }
 
     public static AttributeSupplier.Builder createAttributes() {
@@ -82,7 +86,7 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
 
     @Override
     protected void registerGoals() {
-        // Order Up controls navigation directly; no wandering or combat goals are installed.
+        // Restaurant navigation is controlled by the state machine below.
     }
 
     @Override
@@ -96,6 +100,7 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         builder.define(DATA_DRINK, ItemStack.EMPTY);
         builder.define(DATA_FOOD_DONE, false);
         builder.define(DATA_DRINK_DONE, false);
+        builder.define(DATA_ORDER_FAILED, false);
     }
 
     public void setRestaurantContext(BlockPos heartPos, BlockPos chairPos, BlockPos menuPos) {
@@ -103,6 +108,13 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         entityData.set(DATA_CHAIR, Optional.of(chairPos.immutable()));
         menuBoardPos = menuPos == null ? null : menuPos.immutable();
         entityData.set(DATA_STATE, WALKING);
+        entityData.set(DATA_FOOD, ItemStack.EMPTY);
+        entityData.set(DATA_DRINK, ItemStack.EMPTY);
+        entityData.set(DATA_FOOD_DONE, false);
+        entityData.set(DATA_DRINK_DONE, false);
+        entityData.set(DATA_ORDER_FAILED, false);
+        orderPrice = 0;
+        angryRewardClaimed = false;
         setMood(CustomerMood.NEUTRAL);
     }
 
@@ -113,7 +125,7 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         Path bestPath = null;
         double bestDistance = Double.MAX_VALUE;
 
-        // A chair is a solid block, so pathfind to a safe horizontal block next to it.
+        // The chair itself has collision. Path to a reachable standing block beside it.
         for (Direction direction : Direction.Plane.HORIZONTAL) {
             BlockPos approachPos = chair.relative(direction);
             BlockPos above = approachPos.above();
@@ -148,8 +160,7 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         ServerLevel serverLevel = (ServerLevel) level();
         BlockPos heartPos = getRestaurantHeart();
 
-        // A manually summoned customer has no restaurant context. It is neutral,
-        // persistent and is never deleted merely because it is outside a restaurant.
+        // A manually summoned neutral customer is persistent and independent.
         if (heartPos == null) return;
 
         RestaurantHeartBlockEntity heart = RestaurantManager.get(serverLevel, heartPos).orElse(null);
@@ -167,6 +178,7 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
             case WALKING -> tickWalking(serverLevel, heart);
             case THINKING -> tickThinking(serverLevel, heart);
             case WAITING -> tickWaiting(serverLevel);
+            case REACTING -> tickReacting(serverLevel, heart);
             case LEAVING -> tickLeaving(serverLevel, heart);
             default -> entityData.set(DATA_STATE, WALKING);
         }
@@ -215,9 +227,28 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         if (!validChair(level)) beginLeaving();
     }
 
+    private void tickReacting(ServerLevel level, RestaurantHeartBlockEntity heart) {
+        if (--stateTimer > 0) return;
+
+        if (getMood() == CustomerMood.HAPPY) {
+            heart.addMoney(orderPrice);
+            heart.addRestaurantXp(10 + Math.max(1, orderPrice / 2));
+            level.sendParticles(
+                    ParticleTypes.HAPPY_VILLAGER,
+                    getX(), getY() + 1.4D, getZ(),
+                    10, 0.35D, 0.45D, 0.35D, 0.02D
+            );
+            level.playSound(null, blockPosition(), SoundEvents.VILLAGER_YES, SoundSource.NEUTRAL, 0.8F, 1.1F);
+        }
+
+        cleanupSeat(level);
+        entityData.set(DATA_STATE, LEAVING);
+        setLeavePath(heart);
+    }
+
     private void tickLeaving(ServerLevel level, RestaurantHeartBlockEntity heart) {
-        // Neutral customers can enter from outside the restaurant without being deleted.
-        // Only served (happy) or rejected (angry) customers disappear after crossing the border.
+        // Served and angry customers disappear after crossing the restaurant border.
+        // Neutral customers are detached instead, so they are never deleted by the area check.
         if (!heart.contains(blockPosition())) {
             finishLeaving(level);
             return;
@@ -226,9 +257,7 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         if (tickCount % 40 == 0 && getNavigation().isDone()) setLeavePath(heart);
         trackStuckProgress();
 
-        if (stuckTicks > 120) {
-            finishLeaving(level);
-        }
+        if (stuckTicks > 120) finishLeaving(level);
     }
 
     private void finishLeaving(ServerLevel level) {
@@ -248,8 +277,15 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         entityData.set(DATA_HEART, Optional.empty());
         entityData.set(DATA_CHAIR, Optional.empty());
         entityData.set(DATA_STATE, WALKING);
+        entityData.set(DATA_FOOD, ItemStack.EMPTY);
+        entityData.set(DATA_DRINK, ItemStack.EMPTY);
+        entityData.set(DATA_FOOD_DONE, false);
+        entityData.set(DATA_DRINK_DONE, false);
+        entityData.set(DATA_ORDER_FAILED, false);
         setMood(CustomerMood.NEUTRAL);
         menuBoardPos = null;
+        orderPrice = 0;
+        angryRewardClaimed = false;
         stuckTicks = 0;
     }
 
@@ -283,7 +319,7 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
 
         int foodSlot = random.nextInt(MenuBoardBlockEntity.FOOD_SLOTS);
         ItemStack food = menu.getGhostItem(foodSlot);
-        ItemStack drink = random.nextFloat() < 0.40F
+        ItemStack drink = random.nextFloat() < 0.50F
                 ? menu.getGhostItem(MenuBoardBlockEntity.FOOD_SLOTS + random.nextInt(MenuBoardBlockEntity.DRINK_SLOTS))
                 : ItemStack.EMPTY;
 
@@ -291,6 +327,8 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         entityData.set(DATA_DRINK, drink.isEmpty() ? ItemStack.EMPTY : drink.copyWithCount(1));
         entityData.set(DATA_FOOD_DONE, false);
         entityData.set(DATA_DRINK_DONE, drink.isEmpty());
+        entityData.set(DATA_ORDER_FAILED, false);
+        angryRewardClaimed = false;
 
         orderPrice = menu.getPrice(foodSlot, level);
         if (!drink.isEmpty()) {
@@ -331,42 +369,40 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
             matched = true;
         }
 
+        if (!player.getAbilities().instabuild) held.shrink(1);
+
         if (!matched) {
-            becomeAngry(serverLevel, heart);
+            becomeAngry(serverLevel);
             return InteractionResult.CONSUME;
         }
 
-        if (!player.getAbilities().instabuild) held.shrink(1);
         serverLevel.playSound(null, blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, 0.7F, 1.2F);
 
         if (entityData.get(DATA_FOOD_DONE) && entityData.get(DATA_DRINK_DONE)) {
-            completeHappyOrder(serverLevel, heart);
+            beginHappyReaction();
         }
         return InteractionResult.CONSUME;
     }
 
-    private void completeHappyOrder(ServerLevel level, RestaurantHeartBlockEntity heart) {
-        heart.addMoney(orderPrice);
-        heart.addRestaurantXp(10 + Math.max(1, orderPrice / 2));
+    private void beginHappyReaction() {
         setMood(CustomerMood.HAPPY);
-        level.sendParticles(
-                ParticleTypes.HAPPY_VILLAGER,
-                getX(), getY() + 1.4D, getZ(),
-                10, 0.35D, 0.45D, 0.35D, 0.02D
-        );
-        beginLeaving();
+        entityData.set(DATA_ORDER_FAILED, false);
+        entityData.set(DATA_STATE, REACTING);
+        stateTimer = RESULT_DISPLAY_TICKS;
     }
 
-    private void becomeAngry(ServerLevel level, RestaurantHeartBlockEntity heart) {
+    private void becomeAngry(ServerLevel level) {
         setMood(CustomerMood.ANGRY);
+        entityData.set(DATA_ORDER_FAILED, true);
+        entityData.set(DATA_STATE, REACTING);
+        stateTimer = RESULT_DISPLAY_TICKS;
+        angryRewardClaimed = false;
         level.sendParticles(
                 ParticleTypes.ANGRY_VILLAGER,
                 getX(), getY() + 1.5D, getZ(),
                 8, 0.25D, 0.35D, 0.25D, 0.02D
         );
-        cleanupSeat(level);
-        entityData.set(DATA_STATE, LEAVING);
-        setLeavePath(heart);
+        level.playSound(null, blockPosition(), SoundEvents.VILLAGER_NO, SoundSource.NEUTRAL, 0.8F, 1.0F);
     }
 
     public void beginLeaving() {
@@ -397,10 +433,10 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         }
 
         double length = Math.max(0.001D, Math.sqrt(dx * dx + dz * dz));
-        double distance = heart.getRadius() + 12.0D;
+        double distance = heart.getRadius() + 8.0D;
         double targetX = heart.getBlockPos().getX() + 0.5D + dx / length * distance;
         double targetZ = heart.getBlockPos().getZ() + 0.5D + dz / length * distance;
-        double speed = getMood() == CustomerMood.ANGRY ? 0.72D : 0.55D;
+        double speed = getMood() == CustomerMood.ANGRY ? 0.64D : 0.50D;
         getNavigation().moveTo(targetX, getY(), targetZ, speed);
     }
 
@@ -440,28 +476,32 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
 
     @Override
     public boolean hurt(DamageSource source, float amount) {
-        // Neutral customers are protected. Happy and angry customers are mortal.
-        if (getMood() == CustomerMood.NEUTRAL) return false;
-        return super.hurt(source, amount);
-    }
-
-    @Override
-    public void die(DamageSource source) {
+        // Regular damage never kills a customer. /kill still works because the command calls Entity#kill directly.
         if (!level().isClientSide
                 && getMood() == CustomerMood.ANGRY
-                && source.getEntity() instanceof Player player) {
+                && getCustomerState() == LEAVING
+                && !angryRewardClaimed
+                && source.getEntity() instanceof Player player
+                && level() instanceof ServerLevel serverLevel) {
             BlockPos heartPos = getRestaurantHeart();
-            if (heartPos != null && level() instanceof ServerLevel serverLevel) {
-                RestaurantManager.get(serverLevel, heartPos).ifPresent(heart -> {
-                    if (heart.isMember(player.getUUID())) {
-                        heart.addMoney(Math.max(1, orderPrice / 2));
-                    }
-                });
+            RestaurantHeartBlockEntity heart = heartPos == null
+                    ? null
+                    : RestaurantManager.get(serverLevel, heartPos).orElse(null);
+
+            if (heart != null && heart.isMember(player.getUUID())) {
+                int recovered = Math.max(1, orderPrice / 2);
+                heart.addMoney(recovered);
+                angryRewardClaimed = true;
+                serverLevel.sendParticles(
+                        ModParticles.COIN.get(),
+                        getX(), getY() + 1.0D, getZ(),
+                        14, 0.30D, 0.35D, 0.30D, 0.12D
+                );
+                serverLevel.playSound(null, blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.PLAYERS, 0.8F, 1.25F);
+                player.displayClientMessage(Component.translatable("message.orderup.angry_recovery", recovered), true);
             }
         }
-
-        if (level() instanceof ServerLevel serverLevel) cleanupSeat(serverLevel);
-        super.die(source);
+        return false;
     }
 
     @Override
@@ -528,6 +568,10 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         return entityData.get(DATA_DRINK_DONE);
     }
 
+    public boolean isOrderFailed() {
+        return entityData.get(DATA_ORDER_FAILED);
+    }
+
     @Override
     public VillagerData getVillagerData() {
         return villagerData;
@@ -552,6 +596,8 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         tag.putString("mood", getMood().serializedName());
         tag.putInt("StateTimer", stateTimer);
         tag.putInt("OrderPrice", orderPrice);
+        tag.putBoolean("OrderFailed", isOrderFailed());
+        tag.putBoolean("AngryRewardClaimed", angryRewardClaimed);
         saveItemId(tag, "Food", getOrderedFood());
         saveItemId(tag, "Drink", getOrderedDrink());
         tag.putBoolean("FoodDone", isFoodDelivered());
@@ -579,9 +625,7 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         int savedState = tag.getInt("CustomerState");
         boolean hasMood = tag.contains("mood") || tag.contains("Mood");
         String moodName = tag.contains("mood") ? tag.getString("mood") : tag.getString("Mood");
-        CustomerMood savedMood = hasMood
-                ? CustomerMood.byName(moodName)
-                : CustomerMood.NEUTRAL;
+        CustomerMood savedMood = hasMood ? CustomerMood.byName(moodName) : CustomerMood.NEUTRAL;
 
         // Backward compatibility with the old ANGRY state value.
         if (!hasMood && savedState == LEGACY_ANGRY_STATE) {
@@ -589,7 +633,7 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
             savedMood = CustomerMood.ANGRY;
         }
 
-        if (savedState < WALKING || savedState > LEAVING) savedState = WALKING;
+        if (!isValidState(savedState)) savedState = WALKING;
         entityData.set(DATA_STATE, savedState);
         setMood(savedMood);
 
@@ -599,6 +643,12 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         entityData.set(DATA_DRINK, loadItemId(tag, "Drink"));
         entityData.set(DATA_FOOD_DONE, tag.getBoolean("FoodDone"));
         entityData.set(DATA_DRINK_DONE, tag.getBoolean("DrinkDone"));
+        entityData.set(DATA_ORDER_FAILED, tag.getBoolean("OrderFailed"));
+        angryRewardClaimed = tag.getBoolean("AngryRewardClaimed");
+    }
+
+    private static boolean isValidState(int state) {
+        return state == WALKING || state == THINKING || state == WAITING || state == LEAVING || state == REACTING;
     }
 
     private static void saveItemId(CompoundTag tag, String key, ItemStack stack) {

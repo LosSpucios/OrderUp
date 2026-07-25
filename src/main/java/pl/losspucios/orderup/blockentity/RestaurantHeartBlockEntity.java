@@ -1,6 +1,7 @@
 package pl.losspucios.orderup.blockentity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -13,6 +14,7 @@ import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import pl.losspucios.orderup.ModContent;
+import pl.losspucios.orderup.block.OpenSignBlock;
 import pl.losspucios.orderup.entity.CustomerEntity;
 import pl.losspucios.orderup.network.OrderUpNetworking;
 import pl.losspucios.orderup.restaurant.RestaurantManager;
@@ -54,14 +56,14 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
     }
 
     public static void serverTick(ServerLevel level, BlockPos pos, BlockState state, RestaurantHeartBlockEntity heart) {
-        if (level.getGameTime() % 20L == 0L) {
+        long gameTime = level.getGameTime();
+        if (gameTime % 20L == 0L) {
             heart.syncHudToNearbyMembers(level);
             heart.validateLinkedBlocks(level);
         }
-
-        if (level.getGameTime() < heart.nextCustomerSpawnTick) return;
-        heart.nextCustomerSpawnTick = level.getGameTime() + 200L + level.random.nextInt(401);
-        heart.trySpawnCustomer(level);
+        if (gameTime % 10L == 0L) {
+            heart.tickCustomerSpawner(level);
+        }
     }
 
     public void initializeOwner(ServerPlayer player) {
@@ -143,16 +145,23 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
             return;
         }
         menuBoardPos = newPos;
+        nextCustomerSpawnTick = 0L;
         setChanged();
     }
 
     public void setOpenSignPos(BlockPos pos) {
-        openSignPos = pos == null ? null : pos.immutable();
+        BlockPos newPos = pos == null ? null : pos.immutable();
+        if (java.util.Objects.equals(openSignPos, newPos)) {
+            return;
+        }
+        openSignPos = newPos;
+        nextCustomerSpawnTick = 0L;
         setChanged();
     }
 
     public void setOpen(boolean value) {
         open = value;
+        nextCustomerSpawnTick = 0L;
         setChanged();
     }
 
@@ -244,40 +253,117 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
             setMenuBoardPos(null);
         }
         if (openSignPos != null && !level.getBlockState(openSignPos).is(ModContent.OPEN_SIGN.get())) {
-            openSignPos = null;
-            setChanged();
+            setOpenSignPos(null);
         }
     }
 
-    private void trySpawnCustomer(ServerLevel level) {
-        if (!open || !isMenuComplete(level)) return;
-
+    private void tickCustomerSpawner(ServerLevel level) {
         List<BlockPos> freeChairs = RestaurantManager.findFreeChairs(level, this);
-        if (freeChairs.isEmpty()) return;
+        if (!hasOpenSignEnabled(level) || !isMenuComplete(level) || freeChairs.isEmpty()) {
+            nextCustomerSpawnTick = 0L;
+            return;
+        }
+
+        long gameTime = level.getGameTime();
+        if (nextCustomerSpawnTick <= 0L) {
+            scheduleNextCustomer(level);
+            return;
+        }
+        if (gameTime < nextCustomerSpawnTick) return;
+
+        boolean spawned = trySpawnCustomer(level, freeChairs);
+        if (!spawned) {
+            // Conditions are valid, so retry quickly if terrain blocked the chosen edge positions.
+            nextCustomerSpawnTick = gameTime + 20L;
+            return;
+        }
+
+        if (RestaurantManager.findFreeChairs(level, this).isEmpty()) {
+            nextCustomerSpawnTick = 0L;
+        } else {
+            scheduleNextCustomer(level);
+        }
+    }
+
+    private void scheduleNextCustomer(ServerLevel level) {
+        // Five to ten seconds after all requirements become valid.
+        nextCustomerSpawnTick = level.getGameTime() + 100L + level.random.nextInt(101);
+    }
+
+    private boolean hasOpenSignEnabled(ServerLevel level) {
+        BlockPos signPos = openSignPos;
+        if (signPos == null || !level.getBlockState(signPos).is(ModContent.OPEN_SIGN.get())) {
+            signPos = findOpenSignInRestaurant(level);
+            if (signPos == null) return false;
+            setOpenSignPos(signPos);
+        }
+
+        if (!level.hasChunk(signPos.getX() >> 4, signPos.getZ() >> 4)) return false;
+        BlockState signState = level.getBlockState(signPos);
+        if (!signState.is(ModContent.OPEN_SIGN.get()) || !signState.hasProperty(OpenSignBlock.OPEN)) return false;
+
+        boolean signOpen = signState.getValue(OpenSignBlock.OPEN);
+        if (open != signOpen) {
+            open = signOpen;
+            setChanged();
+        }
+        return signOpen;
+    }
+
+    private BlockPos findOpenSignInRestaurant(ServerLevel level) {
+        int radius = getRadius();
+        int minY = Math.max(level.getMinBuildHeight(), worldPosition.getY() - 8);
+        int maxY = Math.min(level.getMaxBuildHeight() - 1, worldPosition.getY() + 8);
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+
+        for (int x = worldPosition.getX() - radius; x <= worldPosition.getX() + radius; x++) {
+            for (int z = worldPosition.getZ() - radius; z <= worldPosition.getZ() + radius; z++) {
+                for (int y = minY; y <= maxY; y++) {
+                    cursor.set(x, y, z);
+                    if (level.getBlockState(cursor).is(ModContent.OPEN_SIGN.get())) {
+                        return cursor.immutable();
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean trySpawnCustomer(ServerLevel level, List<BlockPos> freeChairs) {
+        if (menuBoardPos == null || freeChairs.isEmpty()) return false;
 
         BlockPos chair = freeChairs.get(level.random.nextInt(freeChairs.size()));
-        for (int attempt = 0; attempt < 12; attempt++) {
+        for (int attempt = 0; attempt < 24; attempt++) {
             BlockPos spawnPos = randomSpawnPosition(level);
+            if (spawnPos == null) continue;
+
             CustomerEntity customer = ModContent.CUSTOMER.get().create(level);
-            if (customer == null) return;
-            customer.moveTo(spawnPos.getX() + 0.5D, spawnPos.getY(), spawnPos.getZ() + 0.5D, level.random.nextFloat() * 360.0F, 0.0F);
+            if (customer == null) return false;
+            customer.moveTo(
+                    spawnPos.getX() + 0.5D,
+                    spawnPos.getY(),
+                    spawnPos.getZ() + 0.5D,
+                    level.random.nextFloat() * 360.0F,
+                    0.0F
+            );
             customer.setRestaurantContext(worldPosition, chair, menuBoardPos);
 
             if (!level.noCollision(customer)) continue;
 
-            // Add the entity first. Navigation/pathfinding is more reliable once the mob is part of the level.
-            level.addFreshEntity(customer);
+            // Navigation is reliable only after the entity has joined the level.
+            if (!level.addFreshEntity(customer)) continue;
             if (!customer.beginWalkingToChair()) {
                 customer.discard();
                 continue;
             }
-
-            return;
+            return true;
         }
+        return false;
     }
 
     private BlockPos randomSpawnPosition(ServerLevel level) {
-        int distance = getRadius() + 10 + level.random.nextInt(9);
+        // Spawn four or five blocks beyond the visible restaurant border.
+        int distance = getRadius() + 4 + level.random.nextInt(2);
         int side = level.random.nextInt(4);
         int offset = level.random.nextInt(getRadius() * 2 + 1) - getRadius();
         int x = worldPosition.getX();
@@ -288,8 +374,17 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
             case 2 -> { z += distance; x += offset; }
             default -> { z -= distance; x += offset; }
         }
+
+        if (!level.hasChunk(x >> 4, z >> 4)) return null;
         int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
-        return new BlockPos(x, y, z);
+        BlockPos spawnPos = new BlockPos(x, y, z);
+        BlockPos floorPos = spawnPos.below();
+
+        if (!level.getFluidState(spawnPos).isEmpty()) return null;
+        if (!level.getBlockState(spawnPos).getCollisionShape(level, spawnPos).isEmpty()) return null;
+        if (!level.getBlockState(spawnPos.above()).getCollisionShape(level, spawnPos.above()).isEmpty()) return null;
+        if (!level.getBlockState(floorPos).isFaceSturdy(level, floorPos, Direction.UP)) return null;
+        return spawnPos;
     }
 
     public String getRestaurantName() { return restaurantName; }
@@ -313,7 +408,6 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
         tag.putInt("RestaurantXp", restaurantXp);
         tag.putLong("Money", money);
         tag.putBoolean("Open", open);
-        tag.putLong("NextCustomerSpawnTick", nextCustomerSpawnTick);
         if (menuBoardPos != null) tag.putLong("MenuBoardPos", menuBoardPos.asLong());
         if (openSignPos != null) tag.putLong("OpenSignPos", openSignPos.asLong());
 
@@ -338,7 +432,7 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
         restaurantXp = Math.max(0, tag.getInt("RestaurantXp"));
         money = Math.max(0L, tag.getLong("Money"));
         open = !tag.contains("Open") || tag.getBoolean("Open");
-        nextCustomerSpawnTick = tag.getLong("NextCustomerSpawnTick");
+        nextCustomerSpawnTick = 0L;
         menuBoardPos = tag.contains("MenuBoardPos") ? BlockPos.of(tag.getLong("MenuBoardPos")) : null;
         openSignPos = tag.contains("OpenSignPos") ? BlockPos.of(tag.getLong("OpenSignPos")) : null;
 

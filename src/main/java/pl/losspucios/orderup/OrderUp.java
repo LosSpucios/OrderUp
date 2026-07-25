@@ -10,6 +10,7 @@ public final class OrderUp {
 
     public OrderUp(IEventBus modBus) {
         ModContent.register(modBus);
+        ModParticles.register(modBus);
         modBus.addListener(ModContent::registerEntityAttributes);
         modBus.addListener(OrderUpNetworking::registerPayloads);
     }

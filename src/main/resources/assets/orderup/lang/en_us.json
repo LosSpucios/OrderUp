@@ -6,14 +6,12 @@
   "block.orderup.menu_board": "Menu",
   "block.orderup.open_sign": "Open Sign",
   "entity.orderup.customer": "Customer",
-
   "message.orderup.only_inside_restaurant": "This can only be placed inside a restaurant.",
   "message.orderup.chair_needs_table": "A chair can only be placed next to a table.",
   "message.orderup.only_one_open_sign": "This restaurant already has an Open Sign.",
   "message.orderup.not_restaurant_member": "You are not part of this restaurant's crew.",
   "message.orderup.restaurant_open": "The restaurant is now open!",
   "message.orderup.restaurant_closed": "The restaurant is now closed.",
-
   "screen.orderup.restaurant_heart": "Restaurant Heart",
   "screen.orderup.restaurant_name": "Restaurant name",
   "screen.orderup.player_name": "Player name",
@@ -22,5 +20,6 @@
   "screen.orderup.menu": "Menu",
   "screen.orderup.food": "Food",
   "screen.orderup.drinks": "Drinks",
-  "screen.orderup.inventory_hint": "Select a menu slot, then click an item below. Right-click a slot to clear it."
+  "screen.orderup.inventory_hint": "Select a menu slot, then click an item below. Right-click a slot to clear it.",
+  "message.orderup.angry_recovery": "Recovered $%s from the angry customer!"
 }
