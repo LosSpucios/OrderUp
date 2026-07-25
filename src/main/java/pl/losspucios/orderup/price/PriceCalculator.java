@@ -6,6 +6,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.world.item.crafting.RecipeInput;
 import net.minecraft.world.item.crafting.RecipeType;
 
 import java.util.HashSet;
@@ -13,13 +14,6 @@ import java.util.OptionalInt;
 import java.util.Set;
 
 public final class PriceCalculator {
-    private static final RecipeType<?>[] SUPPORTED_TYPES = {
-            RecipeType.CRAFTING,
-            RecipeType.SMELTING,
-            RecipeType.SMOKING,
-            RecipeType.CAMPFIRE_COOKING
-    };
-
     private PriceCalculator() {}
 
     public static int calculate(ServerLevel level, ItemStack result) {
@@ -33,9 +27,10 @@ public final class PriceCalculator {
         if (depth > 8 || !visiting.add(stack.getItem())) return IngredientPriceManager.unknownIngredientPrice();
 
         int best = Integer.MAX_VALUE;
-        for (RecipeType<?> type : SUPPORTED_TYPES) {
-            best = Math.min(best, cheapestRecipe(level, type, stack.getItem(), visiting, depth));
-        }
+        best = Math.min(best, cheapestRecipe(level, RecipeType.CRAFTING, stack.getItem(), visiting, depth));
+        best = Math.min(best, cheapestRecipe(level, RecipeType.SMELTING, stack.getItem(), visiting, depth));
+        best = Math.min(best, cheapestRecipe(level, RecipeType.SMOKING, stack.getItem(), visiting, depth));
+        best = Math.min(best, cheapestRecipe(level, RecipeType.CAMPFIRE_COOKING, stack.getItem(), visiting, depth));
         visiting.remove(stack.getItem());
 
         if (best == Integer.MAX_VALUE) {
@@ -44,30 +39,39 @@ public final class PriceCalculator {
         return Math.max(1, best);
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
-    private static int cheapestRecipe(ServerLevel level, RecipeType type, Item wanted, Set<Item> visiting, int depth) {
+    private static <I extends RecipeInput, T extends Recipe<I>> int cheapestRecipe(
+            ServerLevel level,
+            RecipeType<T> type,
+            Item wanted,
+            Set<Item> visiting,
+            int depth
+    ) {
         int best = Integer.MAX_VALUE;
-        for (Object object : level.getRecipeManager().getAllRecipesFor(type)) {
-            RecipeHolder holder = (RecipeHolder) object;
-            Recipe recipe = holder.value();
+        for (RecipeHolder<T> holder : level.getRecipeManager().getAllRecipesFor(type)) {
+            T recipe = holder.value();
             ItemStack result = recipe.getResultItem(level.registryAccess());
             if (!result.is(wanted)) continue;
 
             int total = 0;
             boolean valid = true;
-            for (Object ingredientObject : recipe.getIngredients()) {
-                Ingredient ingredient = (Ingredient) ingredientObject;
+            for (Ingredient ingredient : recipe.getIngredients()) {
                 if (ingredient.isEmpty()) continue;
+
                 int optionBest = Integer.MAX_VALUE;
                 for (ItemStack option : ingredient.getItems()) {
-                    optionBest = Math.min(optionBest, calculateInternal(level, option.copyWithCount(1), new HashSet<>(visiting), depth + 1));
+                    optionBest = Math.min(
+                            optionBest,
+                            calculateInternal(level, option.copyWithCount(1), new HashSet<>(visiting), depth + 1)
+                    );
                 }
+
                 if (optionBest == Integer.MAX_VALUE) {
                     valid = false;
                     break;
                 }
                 total += optionBest;
             }
+
             if (valid) {
                 int outputCount = Math.max(1, result.getCount());
                 best = Math.min(best, Math.max(1, (int) Math.ceil(total / (double) outputCount)));

@@ -32,7 +32,7 @@ public final class OrderUpNetworking {
     private OrderUpNetworking() {}
 
     public static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar("1");
+        PayloadRegistrar registrar = event.registrar("2");
 
         registrar.playToServer(AddMemberPayload.TYPE, AddMemberPayload.STREAM_CODEC, OrderUpNetworking::handleAddMember);
         registrar.playToServer(RemoveMemberPayload.TYPE, RemoveMemberPayload.STREAM_CODEC, OrderUpNetworking::handleRemoveMember);
@@ -78,9 +78,21 @@ public final class OrderUpNetworking {
         PacketDistributor.sendToPlayer(player, new MenuDataPayload(menu.getBlockPos(), itemIds, prices));
     }
 
-    public static void sendHud(ServerPlayer player, RestaurantHeartBlockEntity heart) {
+    public static void sendHud(
+            ServerPlayer player,
+            RestaurantHeartBlockEntity heart,
+            RestaurantManager.ChairStats chairStats,
+            boolean menuComplete
+    ) {
         PacketDistributor.sendToPlayer(player, new HudPayload(
-                heart.getBlockPos(), heart.getMoney(), heart.getRestaurantXp(), heart.getRestaurantLevel(), heart.xpForNextLevel()
+                heart.getBlockPos(),
+                heart.getMoney(),
+                heart.getRestaurantXp(),
+                heart.getRestaurantLevel(),
+                heart.xpForNextLevel(),
+                chairStats.occupied(),
+                chairStats.total(),
+                menuComplete
         ));
     }
 
@@ -227,7 +239,16 @@ public final class OrderUpNetworking {
         @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
-    public record HudPayload(BlockPos heartPos, long money, int xp, int level, int nextXp) implements CustomPacketPayload {
+    public record HudPayload(
+            BlockPos heartPos,
+            long money,
+            int xp,
+            int level,
+            int nextXp,
+            int occupiedChairs,
+            int totalChairs,
+            boolean menuComplete
+    ) implements CustomPacketPayload {
         public static final Type<HudPayload> TYPE = new Type<>(id("hud"));
         public static final StreamCodec<RegistryFriendlyByteBuf, HudPayload> STREAM_CODEC = StreamCodec.of(
                 (buf, value) -> {
@@ -236,8 +257,20 @@ public final class OrderUpNetworking {
                     buf.writeVarInt(value.xp);
                     buf.writeVarInt(value.level);
                     buf.writeVarInt(value.nextXp);
+                    buf.writeVarInt(value.occupiedChairs);
+                    buf.writeVarInt(value.totalChairs);
+                    buf.writeBoolean(value.menuComplete);
                 },
-                buf -> new HudPayload(buf.readBlockPos(), buf.readLong(), buf.readVarInt(), buf.readVarInt(), buf.readVarInt())
+                buf -> new HudPayload(
+                        buf.readBlockPos(),
+                        buf.readLong(),
+                        buf.readVarInt(),
+                        buf.readVarInt(),
+                        buf.readVarInt(),
+                        buf.readVarInt(),
+                        buf.readVarInt(),
+                        buf.readBoolean()
+                )
         );
         @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }

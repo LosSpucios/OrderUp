@@ -157,11 +157,21 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
     }
 
     private void syncHudToNearbyMembers(ServerLevel level) {
+        RestaurantManager.ChairStats chairStats = RestaurantManager.getChairStats(level, this);
+        boolean menuComplete = isMenuComplete(level);
+
         for (ServerPlayer player : level.players()) {
             if (isMember(player.getUUID()) && contains(player.blockPosition())) {
-                OrderUpNetworking.sendHud(player, this);
+                OrderUpNetworking.sendHud(player, this, chairStats, menuComplete);
             }
         }
+    }
+
+    public boolean isMenuComplete(ServerLevel level) {
+        return menuBoardPos != null
+                && level.hasChunk(menuBoardPos.getX() >> 4, menuBoardPos.getZ() >> 4)
+                && level.getBlockEntity(menuBoardPos) instanceof MenuBoardBlockEntity menu
+                && menu.isFull();
     }
 
     private void validateLinkedBlocks(ServerLevel level) {
@@ -176,18 +186,10 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
     }
 
     private void trySpawnCustomer(ServerLevel level) {
-        if (!open || menuBoardPos == null || !level.hasChunkAt(menuBoardPos)) return;
-        if (!(level.getBlockEntity(menuBoardPos) instanceof MenuBoardBlockEntity menu) || !menu.isFull()) return;
+        if (!open || !isMenuComplete(level)) return;
 
         List<BlockPos> freeChairs = RestaurantManager.findFreeChairs(level, this);
         if (freeChairs.isEmpty()) return;
-
-        List<CustomerEntity> existing = level.getEntitiesOfClass(
-                CustomerEntity.class,
-                new net.minecraft.world.phys.AABB(worldPosition).inflate(getRadius() + 32.0D),
-                entity -> entity.belongsTo(worldPosition) && !entity.isLeaving()
-        );
-        if (existing.size() >= freeChairs.size()) return;
 
         BlockPos chair = freeChairs.get(level.random.nextInt(freeChairs.size()));
         for (int attempt = 0; attempt < 12; attempt++) {

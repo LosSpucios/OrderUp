@@ -9,7 +9,7 @@ import pl.losspucios.orderup.OrderUp;
 import pl.losspucios.orderup.price.IngredientPriceManager;
 import pl.losspucios.orderup.restaurant.RestaurantManager;
 
-@EventBusSubscriber(modid = OrderUp.MOD_ID, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = OrderUp.MOD_ID)
 public final class CommonEvents {
     private CommonEvents() {}
 

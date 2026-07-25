@@ -35,7 +35,7 @@ public class MenuBoardScreen extends Screen {
     public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
     }
 
-    public void applyPayload(OrderUpNetworking.MenuDataPayload payload) {
+    public final void applyPayload(OrderUpNetworking.MenuDataPayload payload) {
         this.data = payload;
         menuStacks.clear();
 
@@ -97,23 +97,15 @@ public class MenuBoardScreen extends Screen {
             );
         }
 
-        // Short, centered copy that stays inside the panel at every normal GUI scale.
         graphics.drawCenteredString(
                 font,
-                Component.literal("Drag items into the menu slots."),
+                Component.literal("Drag to add  |  Right-click to clear"),
                 left + GUI_WIDTH / 2,
-                top + 149,
-                0xFF6A5140
-        );
-        graphics.drawCenteredString(
-                font,
-                Component.literal("Right-click a slot to clear it."),
-                left + GUI_WIDTH / 2,
-                top + 160,
+                top + 154,
                 0xFF6A5140
         );
 
-        graphics.drawString(font, Component.literal("Inventory"), left + 36, top + 175, 0xFF553824, false);
+        graphics.drawString(font, Component.literal("Inventory"), left + 36, top + 171, 0xFF553824, false);
 
         if (minecraft != null && minecraft.player != null) {
             int inventoryX = inventoryX(left);
@@ -149,7 +141,7 @@ public class MenuBoardScreen extends Screen {
 
         graphics.fill(left + 14, top + 35, left + GUI_WIDTH - 14, top + 89, 0xFFE8D1A5);
         graphics.fill(left + 14, top + 92, left + GUI_WIDTH - 14, top + 145, 0xFFE8D1A5);
-        graphics.fill(left + 14, top + 172, left + GUI_WIDTH - 14, top + 173, 0xFFB48C52);
+        graphics.fill(left + 14, top + 168, left + GUI_WIDTH - 14, top + 169, 0xFFB48C52);
     }
 
     private void renderMenuSlot(GuiGraphics graphics, int x, int y, int slot, int mouseX, int mouseY) {

@@ -7,7 +7,7 @@ import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import pl.losspucios.orderup.ModContent;
 import pl.losspucios.orderup.OrderUp;
 
-@EventBusSubscriber(modid = OrderUp.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.MOD)
+@EventBusSubscriber(modid = OrderUp.MOD_ID, value = Dist.CLIENT)
 public final class ClientModEvents {
     private ClientModEvents() {}
 

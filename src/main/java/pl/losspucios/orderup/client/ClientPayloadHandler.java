@@ -25,7 +25,16 @@ public final class ClientPayloadHandler {
     }
 
     public static void handleHud(OrderUpNetworking.HudPayload payload) {
-        ClientRestaurantState.updateHud(payload.heartPos(), payload.money(), payload.xp(), payload.level(), payload.nextXp());
+        ClientRestaurantState.updateHud(
+                payload.heartPos(),
+                payload.money(),
+                payload.xp(),
+                payload.level(),
+                payload.nextXp(),
+                payload.occupiedChairs(),
+                payload.totalChairs(),
+                payload.menuComplete()
+        );
     }
 
     public static void handleBorderToggle(OrderUpNetworking.BorderTogglePayload payload) {
