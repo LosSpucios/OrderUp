@@ -107,7 +107,7 @@ public final class RestaurantManager {
                 ),
                 entity -> entity.belongsTo(heartPos)
         )) {
-            customer.discard();
+            customer.onRestaurantRemoved();
         }
     }
 

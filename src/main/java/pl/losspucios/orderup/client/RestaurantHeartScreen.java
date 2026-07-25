@@ -14,12 +14,17 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import pl.losspucios.orderup.network.OrderUpNetworking;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
 public class RestaurantHeartScreen extends Screen {
     private static final int GUI_WIDTH = 300;
-    private static final int GUI_HEIGHT = 312;
+    private static final int GUI_HEIGHT = 322;
+    private static final int OWNER_ROW_Y = 116;
+    private static final int ADD_ROW_Y = 139;
+    private static final int MEMBER_ROWS_Y = 162;
+    private static final int INVENTORY_Y = 222;
 
     private OrderUpNetworking.HeartDataPayload data;
     private EditBox restaurantNameBox;
@@ -35,7 +40,7 @@ public class RestaurantHeartScreen extends Screen {
         this.data = data;
     }
 
-    /** Prevent vanilla from submitting the blurred background layer. */
+    /** Prevent vanilla from adding a blurred world layer behind this screen. */
     @Override
     public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
     }
@@ -49,7 +54,7 @@ public class RestaurantHeartScreen extends Screen {
         restaurantNameBox = new EditBox(
                 font,
                 left + 18,
-                top + 17,
+                top + 15,
                 226,
                 20,
                 Component.translatable("screen.orderup.restaurant_name")
@@ -61,25 +66,28 @@ public class RestaurantHeartScreen extends Screen {
 
         saveNameButton = Button.builder(Component.literal("✓"), button ->
                         PacketDistributor.sendToServer(
-                                new OrderUpNetworking.RenameRestaurantPayload(data.heartPos(), restaurantNameBox.getValue())
+                                new OrderUpNetworking.RenameRestaurantPayload(
+                                        data.heartPos(),
+                                        restaurantNameBox.getValue()
+                                )
                         ))
-                .bounds(left + 250, top + 17, 30, 20)
+                .bounds(left + 250, top + 15, 30, 20)
                 .build();
         saveNameButton.visible = owner;
         addRenderableWidget(saveNameButton);
 
-        // The add button sits next to the Crew heading rather than floating at the bottom.
+        // The plus is always the row immediately below the founder.
         addButton = Button.builder(Component.literal("+"), button -> setAddMode(true))
-                .bounds(left + 252, top + 103, 26, 20)
+                .bounds(left + 28, top + ADD_ROW_Y, 20, 20)
                 .build();
         addButton.visible = owner;
         addRenderableWidget(addButton);
 
         addMemberBox = new EditBox(
                 font,
-                left + 70,
-                top + 165,
-                132,
+                left + 54,
+                top + ADD_ROW_Y,
+                140,
                 20,
                 Component.translatable("screen.orderup.player_name")
         );
@@ -88,13 +96,13 @@ public class RestaurantHeartScreen extends Screen {
         addRenderableWidget(addMemberBox);
 
         confirmAddButton = Button.builder(Component.literal("✓"), button -> confirmAddMember())
-                .bounds(left + 207, top + 165, 32, 20)
+                .bounds(left + 200, top + ADD_ROW_Y, 34, 20)
                 .build();
         confirmAddButton.visible = false;
         addRenderableWidget(confirmAddButton);
 
         cancelAddButton = Button.builder(Component.literal("✕"), button -> setAddMode(false))
-                .bounds(left + 244, top + 165, 32, 20)
+                .bounds(left + 240, top + ADD_ROW_Y, 34, 20)
                 .build();
         cancelAddButton.visible = false;
         addRenderableWidget(cancelAddButton);
@@ -117,7 +125,9 @@ public class RestaurantHeartScreen extends Screen {
     private void confirmAddMember() {
         String name = addMemberBox.getValue().strip();
         if (!name.isBlank()) {
-            PacketDistributor.sendToServer(new OrderUpNetworking.AddMemberPayload(data.heartPos(), name));
+            PacketDistributor.sendToServer(
+                    new OrderUpNetworking.AddMemberPayload(data.heartPos(), name)
+            );
         }
         setAddMode(false);
     }
@@ -135,7 +145,6 @@ public class RestaurantHeartScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        // Simple darkening without the vanilla world blur.
         graphics.fill(0, 0, width, height, 0x66000000);
 
         int left = (width - GUI_WIDTH) / 2;
@@ -145,18 +154,16 @@ public class RestaurantHeartScreen extends Screen {
         renderRestaurantProgress(graphics, left, top);
         renderCrew(graphics, left, top);
 
-        graphics.fill(left + 12, top + 197, left + GUI_WIDTH - 12, top + 198, 0xFFB99A68);
-        graphics.drawString(font, Component.literal("Inventory"), left + 69, top + 205, 0xFF553824, false);
+        graphics.drawString(font, Component.literal("Inventory"), left + 69, top + 214, 0xFF553824, false);
 
         if (minecraft != null && minecraft.player != null) {
             int inventoryX = left + (GUI_WIDTH - VanillaInventoryPanel.WIDTH) / 2;
-            int inventoryY = top + 218;
             VanillaInventoryPanel.render(
                     graphics,
                     font,
                     minecraft.player.getInventory(),
                     inventoryX,
-                    inventoryY,
+                    top + INVENTORY_Y,
                     mouseX,
                     mouseY,
                     true
@@ -167,14 +174,16 @@ public class RestaurantHeartScreen extends Screen {
     }
 
     private void renderPanel(GuiGraphics graphics, int left, int top) {
-        graphics.fill(left, top, left + GUI_WIDTH, top + GUI_HEIGHT, 0xFF5A3823);
-        graphics.fill(left + 3, top + 3, left + GUI_WIDTH - 3, top + GUI_HEIGHT - 3, 0xFFD7B77B);
-        graphics.fill(left + 7, top + 7, left + GUI_WIDTH - 7, top + GUI_HEIGHT - 7, 0xFFF4E5C5);
+        graphics.fill(left, top, left + GUI_WIDTH, top + GUI_HEIGHT, 0xFF4B2D1D);
+        graphics.fill(left + 3, top + 3, left + GUI_WIDTH - 3, top + GUI_HEIGHT - 3, 0xFFD1A968);
+        graphics.fill(left + 7, top + 7, left + GUI_WIDTH - 7, top + GUI_HEIGHT - 7, 0xFFF3E2BF);
 
-        // Header shadow and two soft cards make the layout easier to read.
-        graphics.fill(left + 14, top + 43, left + GUI_WIDTH - 14, top + 45, 0xFFB58C53);
-        graphics.fill(left + 16, top + 51, left + GUI_WIDTH - 16, top + 96, 0xFFE7D2A8);
-        graphics.fill(left + 16, top + 100, left + GUI_WIDTH - 16, top + 192, 0xFFE9D8B7);
+        graphics.fill(left + 7, top + 7, left + GUI_WIDTH - 7, top + 41, 0xFF8F4935);
+        graphics.fill(left + 7, top + 39, left + GUI_WIDTH - 7, top + 42, 0xFF633124);
+
+        graphics.fill(left + 16, top + 47, left + GUI_WIDTH - 16, top + 92, 0xFFE5CFA3);
+        graphics.fill(left + 16, top + 96, left + GUI_WIDTH - 16, top + 207, 0xFFE9D7B4);
+        graphics.fill(left + 14, top + 210, left + GUI_WIDTH - 14, top + 211, 0xFFB48C52);
     }
 
     private void renderRestaurantProgress(GuiGraphics graphics, int left, int top) {
@@ -182,12 +191,12 @@ public class RestaurantHeartScreen extends Screen {
                 font,
                 Component.literal("Restaurant Level " + data.level()),
                 left + GUI_WIDTH / 2,
-                top + 57,
+                top + 52,
                 0xFF4A2D18
         );
 
         int barX = left + 43;
-        int barY = top + 73;
+        int barY = top + 68;
         int barW = 214;
         int barH = 10;
 
@@ -204,48 +213,61 @@ public class RestaurantHeartScreen extends Screen {
                 font,
                 data.xp() + " / " + data.nextXp() + " XP",
                 left + GUI_WIDTH / 2,
-                top + 85,
+                top + 81,
                 0xFF59412D
         );
     }
 
     private void renderCrew(GuiGraphics graphics, int left, int top) {
-        graphics.drawString(font, Component.literal("Crew"), left + 27, top + 108, 0xFF4A2D18, false);
+        graphics.drawString(font, Component.literal("Crew"), left + 27, top + 101, 0xFF4A2D18, false);
 
         String moneyText = "$" + data.money();
         int moneyWidth = font.width(moneyText);
-        graphics.drawString(font, moneyText, left + 238 - moneyWidth, top + 109, 0xFF3D873F, false);
+        graphics.drawString(font, moneyText, left + 272 - moneyWidth, top + 101, 0xFF3D873F, false);
 
-        List<OrderUpNetworking.MemberData> members = new ArrayList<>(data.members());
-        int maxRows = addMode ? Math.min(2, members.size()) : Math.min(3, members.size());
+        renderPlayerFace(graphics, data.ownerId(), data.ownerName(), left + 28, top + OWNER_ROW_Y, 18);
+        graphics.drawString(font, data.ownerName(), left + 53, top + OWNER_ROW_Y + 5, 0xFF3B2A1D, false);
+        graphics.drawString(font, Component.literal("Founder"), left + 215, top + OWNER_ROW_Y + 5, 0xFF8B623E, false);
 
-        for (int i = 0; i < maxRows; i++) {
+        if (addMode) {
+            graphics.fill(left + 28, top + ADD_ROW_Y, left + 48, top + ADD_ROW_Y + 20, 0xFF191919);
+            graphics.drawCenteredString(font, "?", left + 38, top + ADD_ROW_Y + 6, 0xFFFFFFFF);
+        }
+
+        List<OrderUpNetworking.MemberData> members = nonOwnerMembers();
+        int visibleRows = Math.min(2, members.size());
+
+        for (int i = 0; i < visibleRows; i++) {
             OrderUpNetworking.MemberData member = members.get(i);
-            int rowY = top + 128 + i * 22;
+            int rowY = top + MEMBER_ROWS_Y + i * 22;
 
             renderPlayerFace(graphics, member.id(), member.name(), left + 28, rowY, 18);
             graphics.drawString(font, member.name(), left + 53, rowY + 5, 0xFF3B2A1D, false);
 
-            if (isLocalPlayerOwner() && !member.id().equals(data.ownerId())) {
+            if (isLocalPlayerOwner()) {
                 graphics.drawString(font, "✕", left + 255, rowY + 5, 0xFF9D2F2F, false);
             }
         }
 
-        if (addMode) {
-            int headX = left + 42;
-            int headY = top + 166;
-            graphics.fill(headX, headY, headX + 18, headY + 18, 0xFF1A1A1A);
-            graphics.drawCenteredString(font, "?", headX + 9, headY + 5, 0xFFFFFFFF);
-        } else if (members.size() > 3) {
+        if (members.size() > visibleRows) {
             graphics.drawString(
                     font,
-                    "+" + (members.size() - 3) + " more",
-                    left + 197,
-                    top + 177,
+                    "+" + (members.size() - visibleRows) + " more",
+                    left + 200,
+                    top + 198,
                     0xFF6A5646,
                     false
             );
         }
+    }
+
+    private List<OrderUpNetworking.MemberData> nonOwnerMembers() {
+        List<OrderUpNetworking.MemberData> members = new ArrayList<>();
+        for (OrderUpNetworking.MemberData member : data.members()) {
+            if (!member.id().equals(data.ownerId())) members.add(member);
+        }
+        members.sort(Comparator.comparing(OrderUpNetworking.MemberData::name, String.CASE_INSENSITIVE_ORDER));
+        return members;
     }
 
     private void renderPlayerFace(GuiGraphics graphics, UUID id, String name, int x, int y, int size) {
@@ -265,14 +287,13 @@ public class RestaurantHeartScreen extends Screen {
         if (button == 0 && isLocalPlayerOwner() && !addMode) {
             int left = (width - GUI_WIDTH) / 2;
             int top = (height - GUI_HEIGHT) / 2;
-            List<OrderUpNetworking.MemberData> members = data.members();
+            List<OrderUpNetworking.MemberData> members = nonOwnerMembers();
 
-            for (int i = 0; i < Math.min(3, members.size()); i++) {
+            for (int i = 0; i < Math.min(2, members.size()); i++) {
                 OrderUpNetworking.MemberData member = members.get(i);
-                int rowY = top + 128 + i * 22;
+                int rowY = top + MEMBER_ROWS_Y + i * 22;
 
-                if (!member.id().equals(data.ownerId())
-                        && mouseX >= left + 246 && mouseX <= left + 278
+                if (mouseX >= left + 246 && mouseX <= left + 278
                         && mouseY >= rowY && mouseY <= rowY + 18) {
                     PacketDistributor.sendToServer(
                             new OrderUpNetworking.RemoveMemberPayload(data.heartPos(), member.id())

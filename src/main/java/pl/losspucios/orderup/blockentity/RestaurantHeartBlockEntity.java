@@ -18,6 +18,7 @@ import pl.losspucios.orderup.network.OrderUpNetworking;
 import pl.losspucios.orderup.restaurant.RestaurantManager;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -228,7 +229,7 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
     public String getRestaurantName() { return restaurantName; }
     public UUID getOwnerId() { return ownerId; }
     public String getOwnerName() { return ownerName; }
-    public Map<UUID, String> getMembers() { return Map.copyOf(members); }
+    public Map<UUID, String> getMembers() { return Collections.unmodifiableMap(new LinkedHashMap<>(members)); }
     public int getRestaurantLevel() { return restaurantLevel; }
     public int getRestaurantXp() { return restaurantXp; }
     public long getMoney() { return money; }
