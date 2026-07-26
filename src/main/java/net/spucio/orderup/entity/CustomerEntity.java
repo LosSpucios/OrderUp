@@ -83,6 +83,9 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
     private UUID seatUuid;
     private Direction chairApproachDirection;
     private boolean angryRewardClaimed;
+    private int traversalJumpCooldown;
+    private int blockedTraversalTicks;
+    private boolean climbingToChair;
     private VillagerData villagerData = new VillagerData(VillagerType.PLAINS, VillagerProfession.NONE, 1);
 
     public CustomerEntity(EntityType<? extends CustomerEntity> type, Level level) {
@@ -93,7 +96,7 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         return Mob.createMobAttributes()
                 .add(Attributes.MAX_HEALTH, 20.0D)
                 .add(Attributes.MOVEMENT_SPEED, 0.42D)
-                .add(Attributes.STEP_HEIGHT, 1.25D)
+                .add(Attributes.STEP_HEIGHT, 0.6D)
                 .add(Attributes.FOLLOW_RANGE, 48.0D);
     }
 
@@ -131,6 +134,9 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         pathFailureTicks = 0;
         leavingTicks = 0;
         chairApproachDirection = null;
+        traversalJumpCooldown = 0;
+        blockedTraversalTicks = 0;
+        climbingToChair = false;
         setMood(CustomerMood.NEUTRAL);
     }
 
@@ -169,6 +175,10 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
     @Override
     public void tick() {
         super.tick();
+        if (traversalJumpCooldown > 0) traversalJumpCooldown--;
+        // onClimbable() uses the value prepared during the previous server tick.
+        // Reset it now; assistChairTraversal may enable it again for the next tick.
+        climbingToChair = false;
         if (level().isClientSide) return;
 
         ServerLevel serverLevel = (ServerLevel) level();
@@ -254,11 +264,11 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
     }
 
     /**
-     * Gives restaurant customers a deliberately forgiving way to reach their reserved chair.
-     * Vanilla ground pathfinding is still the primary movement system, but when terrain blocks
-     * the route the customer can jump one-block obstacles and climb a wall in the same way a
-     * spider does. The assist only runs while walking to a chair, so seated and leaving customers
-     * keep their normal behaviour.
+     * Gives restaurant customers a forgiving route to their reserved chair without turning
+     * every walk into constant bunny-hopping. A normal jump is requested only when a solid
+     * obstacle roughly one block high is directly in front of the customer and there is enough
+     * headroom to land on it. Taller walls use the slower spider-like fallback after the customer
+     * has actually been blocked for a short time.
      */
     private void assistChairTraversal(
             BlockPos chair,
@@ -269,40 +279,68 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         double towardX = chairX - getX();
         double towardZ = chairZ - getZ();
         double horizontalLength = Math.sqrt(towardX * towardX + towardZ * towardZ);
-        double chairHeight = chair.getY() + CHAIR_SEAT_HEIGHT;
-
-        boolean needsHeight = chairHeight > getY() + 0.35D;
         boolean blocked = horizontalCollision && horizontalDistanceSqr > SIT_DISTANCE_SQR;
 
-        // Regular hopping handles slabs, fences and one-block ledges without waiting for a full
-        // navigation recalculation.
-        if (onGround() && (blocked || needsHeight) && tickCount % 6 == 0) {
-            getJumpControl().jump();
+        if (!blocked || horizontalLength <= 0.001D) {
+            blockedTraversalTicks = 0;
+            return;
         }
 
-        // Spider-like fallback. While pressing against a wall, keep a little movement toward the
-        // chair and add vertical motion. This is intentionally stronger than villager AI because
-        // a reserved chair should not stay unusable just because the terrain is awkward.
-        if (blocked && horizontalLength > 0.001D) {
+        blockedTraversalTicks++;
+        boolean oneBlockObstacle = hasOneBlockObstacleAhead(towardX, towardZ, horizontalLength);
+
+        if (oneBlockObstacle && onGround() && traversalJumpCooldown == 0) {
+            getJumpControl().jump();
+            traversalJumpCooldown = 12;
+            return;
+        }
+
+        // Do not engage climbing for a normal one-block ledge. It is reserved for a genuinely
+        // taller obstruction and starts only after several blocked ticks, avoiding jump/climb
+        // oscillation after the customer has already stepped onto a block.
+        if (!oneBlockObstacle && blockedTraversalTicks >= 12) {
+            climbingToChair = true;
             Vec3 motion = getDeltaMovement();
-            double climbSpeed = needsHeight ? 0.34D : 0.24D;
-            double pull = 0.11D;
+            double pull = 0.10D;
             setDeltaMovement(
-                    motion.x * 0.55D + towardX / horizontalLength * pull,
-                    Math.max(motion.y, climbSpeed),
-                    motion.z * 0.55D + towardZ / horizontalLength * pull
+                    motion.x * 0.60D + towardX / horizontalLength * pull,
+                    Math.max(motion.y, 0.23D),
+                    motion.z * 0.60D + towardZ / horizontalLength * pull
             );
             hasImpulse = true;
             resetFallDistance();
         }
     }
 
+    private boolean hasOneBlockObstacleAhead(
+            double towardX,
+            double towardZ,
+            double horizontalLength
+    ) {
+        double directionX = towardX / horizontalLength;
+        double directionZ = towardZ / horizontalLength;
+        BlockPos obstaclePos = BlockPos.containing(
+                getX() + directionX * 0.72D,
+                getY() + 0.10D,
+                getZ() + directionZ * 0.72D
+        );
+
+        var obstacleShape = level().getBlockState(obstaclePos).getCollisionShape(level(), obstaclePos);
+        if (obstacleShape.isEmpty()) return false;
+
+        double obstacleTop = obstaclePos.getY() + obstacleShape.max(Direction.Axis.Y);
+        double obstacleHeightFromFeet = obstacleTop - getY();
+        if (obstacleHeightFromFeet < 0.45D || obstacleHeightFromFeet > 1.10D) return false;
+
+        BlockPos landingBody = obstaclePos.above();
+        BlockPos landingHead = obstaclePos.above(2);
+        return level().getBlockState(landingBody).getCollisionShape(level(), landingBody).isEmpty()
+                && level().getBlockState(landingHead).getCollisionShape(level(), landingHead).isEmpty();
+    }
+
     @Override
     public boolean onClimbable() {
-        return super.onClimbable()
-                || (getCustomerState() == WALKING
-                && getTargetChair() != null
-                && horizontalCollision);
+        return super.onClimbable() || climbingToChair;
     }
 
     private void rememberApproachDirection(double chairX, double chairZ) {
@@ -410,6 +448,9 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         pathFailureTicks = 0;
         leavingTicks = 0;
         chairApproachDirection = null;
+        traversalJumpCooldown = 0;
+        blockedTraversalTicks = 0;
+        climbingToChair = false;
     }
 
     private void sitDown(ServerLevel level, BlockPos chair) {
