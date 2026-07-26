@@ -4,8 +4,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.spucio.orderup.ModContent;
+import net.spucio.orderup.blockentity.MenuBoardBlockEntity;
 import net.spucio.orderup.blockentity.RestaurantHeartBlockEntity;
 import net.spucio.orderup.entity.CustomerEntity;
 
@@ -147,6 +149,107 @@ public final class RestaurantManager {
             if (chairPos.equals(customer.getTargetChair()) && !customer.isLeaving()) return false;
         }
         return true;
+    }
+
+    public static List<MenuBoardBlockEntity> findMenuBoards(
+            ServerLevel level,
+            RestaurantHeartBlockEntity heart
+    ) {
+        int radius = heart.getRadius();
+        int minY = Math.max(level.getMinBuildHeight(), heart.getBlockPos().getY() - 8);
+        int maxY = Math.min(level.getMaxBuildHeight() - 1, heart.getBlockPos().getY() + 8);
+        List<MenuBoardBlockEntity> menus = new ArrayList<>();
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+
+        for (int x = heart.getBlockPos().getX() - radius; x <= heart.getBlockPos().getX() + radius; x++) {
+            for (int z = heart.getBlockPos().getZ() - radius; z <= heart.getBlockPos().getZ() + radius; z++) {
+                for (int y = minY; y <= maxY; y++) {
+                    cursor.set(x, y, z);
+                    if (!level.getBlockState(cursor).is(ModContent.MENU_BOARD.get())) continue;
+                    if (level.getBlockEntity(cursor) instanceof MenuBoardBlockEntity menu) {
+                        menus.add(menu);
+                    }
+                }
+            }
+        }
+        return menus;
+    }
+
+    /**
+     * Makes every Menu Board inside one restaurant use the same six ghost slots.
+     * The board with the most configured slots wins when old saves contain
+     * divergent menus; ties prefer the currently linked board, then the board
+     * that triggered the synchronization.
+     */
+    public static void synchronizeMenuBoards(
+            ServerLevel level,
+            RestaurantHeartBlockEntity heart,
+            MenuBoardBlockEntity preferredMenu
+    ) {
+        synchronizeMenuBoardsInternal(level, heart, preferredMenu);
+        heart.syncHudNow(level);
+    }
+
+    public static boolean setSharedMenuItem(
+            ServerLevel level,
+            RestaurantHeartBlockEntity heart,
+            MenuBoardBlockEntity editedMenu,
+            int slot,
+            ItemStack stack
+    ) {
+        List<MenuBoardBlockEntity> menus = synchronizeMenuBoardsInternal(level, heart, editedMenu);
+        if (menus.isEmpty()) return false;
+
+        MenuBoardBlockEntity source = menus.contains(editedMenu) ? editedMenu : menus.getFirst();
+        List<ItemStack> sharedItems = new ArrayList<>(source.getGhostItems());
+        if (!MenuBoardBlockEntity.isValidMenuChange(sharedItems, slot, stack)) return false;
+
+        sharedItems.set(slot, stack.isEmpty() ? ItemStack.EMPTY : stack.copyWithCount(1));
+        BlockPos heartPos = heart.getBlockPos();
+        for (MenuBoardBlockEntity menu : menus) {
+            menu.applySharedMenu(sharedItems, heartPos);
+        }
+
+        heart.setMenuBoardPos(source.getBlockPos());
+        heart.syncHudNow(level);
+        return true;
+    }
+
+    private static List<MenuBoardBlockEntity> synchronizeMenuBoardsInternal(
+            ServerLevel level,
+            RestaurantHeartBlockEntity heart,
+            MenuBoardBlockEntity preferredMenu
+    ) {
+        List<MenuBoardBlockEntity> menus = new ArrayList<>(findMenuBoards(level, heart));
+        if (preferredMenu != null && !menus.contains(preferredMenu)) menus.add(preferredMenu);
+
+        if (menus.isEmpty()) {
+            heart.setMenuBoardPos(null);
+            return menus;
+        }
+
+        BlockPos linkedPos = heart.getMenuBoardPos();
+        MenuBoardBlockEntity source = null;
+        int bestFilled = -1;
+        int bestPriority = -1;
+        for (MenuBoardBlockEntity menu : menus) {
+            int filled = menu.getFilledSlotCount();
+            int priority = menu.getBlockPos().equals(linkedPos) ? 2 : menu == preferredMenu ? 1 : 0;
+            if (filled > bestFilled || filled == bestFilled && priority > bestPriority) {
+                source = menu;
+                bestFilled = filled;
+                bestPriority = priority;
+            }
+        }
+
+        if (source == null) return menus;
+        List<ItemStack> sharedItems = source.getGhostItems();
+        BlockPos heartPos = heart.getBlockPos();
+        for (MenuBoardBlockEntity menu : menus) {
+            menu.applySharedMenu(sharedItems, heartPos);
+        }
+        heart.setMenuBoardPos(source.getBlockPos());
+        return menus;
     }
 
     public static void removeCustomersForHeart(ServerLevel level, BlockPos heartPos) {

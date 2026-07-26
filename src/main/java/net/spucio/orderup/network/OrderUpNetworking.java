@@ -154,9 +154,10 @@ public final class OrderUpNetworking {
             RestaurantHeartBlockEntity heart = RestaurantManager.findContaining(player.level(), payload.menuPos()).orElse(null);
             if (heart == null || !heart.isMember(player.getUUID())) return;
 
-            // Repair old or stale Heart <-> Menu links while editing the menu.
+            // Repair old/stale links and copy the restaurant-wide menu into this board
+            // before applying the edited slot.
             menu.setRestaurantHeartPos(heart.getBlockPos());
-            heart.setMenuBoardPos(menu.getBlockPos());
+            RestaurantManager.synchronizeMenuBoards(player.serverLevel(), heart, menu);
 
             ItemStack stack = ItemStack.EMPTY;
             if (!payload.itemId().isBlank()) {
@@ -164,8 +165,9 @@ public final class OrderUpNetworking {
                 Item item = id == null ? null : BuiltInRegistries.ITEM.get(id);
                 if (item != null && item != net.minecraft.world.item.Items.AIR) stack = new ItemStack(item);
             }
-            menu.setGhostItem(payload.slot(), stack);
-            sendMenuData(player, menu);
+            if (menu.setGhostItem(payload.slot(), stack)) {
+                sendMenuData(player, menu);
+            }
         });
     }
 

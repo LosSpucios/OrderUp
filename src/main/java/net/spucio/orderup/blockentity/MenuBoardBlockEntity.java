@@ -23,6 +23,7 @@ import net.spucio.orderup.restaurant.RestaurantManager;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 public class MenuBoardBlockEntity extends BlockEntity {
     public static final int FOOD_SLOTS = 4;
@@ -36,6 +37,17 @@ public class MenuBoardBlockEntity extends BlockEntity {
         super(ModContent.MENU_BOARD_BE.get(), pos, state);
     }
 
+    @Override
+    public void onLoad() {
+        super.onLoad();
+        if (level instanceof ServerLevel serverLevel) {
+            RestaurantHeartBlockEntity heart = resolveRestaurantHeart(serverLevel);
+            if (heart != null) {
+                RestaurantManager.synchronizeMenuBoards(serverLevel, heart, this);
+            }
+        }
+    }
+
     public ItemStack getGhostItem(int slot) {
         if (slot < 0 || slot >= SLOT_COUNT) return ItemStack.EMPTY;
         return ghostItems.get(slot).copy();
@@ -45,44 +57,77 @@ public class MenuBoardBlockEntity extends BlockEntity {
         return ghostItems.stream().map(ItemStack::copy).toList();
     }
 
+    /**
+     * Changes one menu slot. On the server this is a restaurant-wide operation:
+     * every Menu Board linked to the same Restaurant Heart receives the exact
+     * same six ghost items.
+     */
     public boolean setGhostItem(int slot, ItemStack stack) {
-        if (slot < 0 || slot >= SLOT_COUNT) {
-            return false;
-        }
+        if (slot < 0 || slot >= SLOT_COUNT) return false;
 
         ItemStack normalized = stack.isEmpty() ? ItemStack.EMPTY : stack.copyWithCount(1);
-
-        if (!normalized.isEmpty()) {
-            if (slot < FOOD_SLOTS && !isFood(normalized)) {
-                return false;
-            }
-            if (slot >= FOOD_SLOTS && !isDrink(normalized)) {
-                return false;
-            }
-
-            // The same item may only appear once in the whole menu.
-            for (int i = 0; i < SLOT_COUNT; i++) {
-                if (i == slot) continue;
-
-                ItemStack existing = ghostItems.get(i);
-                if (!existing.isEmpty() && existing.getItem() == normalized.getItem()) {
-                    return false;
-                }
+        if (level instanceof ServerLevel serverLevel) {
+            RestaurantHeartBlockEntity heart = resolveRestaurantHeart(serverLevel);
+            if (heart != null) {
+                restaurantHeartPos = heart.getBlockPos().immutable();
+                return RestaurantManager.setSharedMenuItem(serverLevel, heart, this, slot, normalized);
             }
         }
 
-        ghostItems.set(slot, normalized);
-        setChanged();
-        syncToClient();
-        syncRestaurantHud();
+        if (!isValidMenuChange(ghostItems, slot, normalized)) return false;
+        List<ItemStack> updated = getGhostItems();
+        updated.set(slot, normalized);
+        applySharedMenu(updated, restaurantHeartPos);
         return true;
+    }
+
+    /**
+     * Applies a complete restaurant menu without starting another propagation.
+     * Called by RestaurantManager for all Menu Boards in the same restaurant.
+     */
+    public void applySharedMenu(List<ItemStack> items, BlockPos heartPos) {
+        boolean changed = !Objects.equals(restaurantHeartPos, heartPos);
+        restaurantHeartPos = heartPos == null ? null : heartPos.immutable();
+
+        for (int slot = 0; slot < SLOT_COUNT; slot++) {
+            ItemStack incoming = slot < items.size() && !items.get(slot).isEmpty()
+                    ? items.get(slot).copyWithCount(1)
+                    : ItemStack.EMPTY;
+            ItemStack current = ghostItems.get(slot);
+            if (!sameGhostItem(current, incoming)) {
+                ghostItems.set(slot, incoming);
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            setChanged();
+            syncToClient();
+        }
+    }
+
+    public static boolean isValidMenuChange(List<ItemStack> currentItems, int slot, ItemStack stack) {
+        if (slot < 0 || slot >= SLOT_COUNT) return false;
+        if (stack.isEmpty()) return true;
+        if (slot < FOOD_SLOTS && !isFood(stack)) return false;
+        if (slot >= FOOD_SLOTS && !isDrink(stack)) return false;
+
+        for (int i = 0; i < SLOT_COUNT; i++) {
+            if (i == slot || i >= currentItems.size()) continue;
+            ItemStack existing = currentItems.get(i);
+            if (!existing.isEmpty() && existing.getItem() == stack.getItem()) return false;
+        }
+        return true;
+    }
+
+    private static boolean sameGhostItem(ItemStack first, ItemStack second) {
+        if (first.isEmpty() || second.isEmpty()) return first.isEmpty() == second.isEmpty();
+        return first.getItem() == second.getItem();
     }
 
     public boolean isFull() {
         for (int slot = 0; slot < SLOT_COUNT; slot++) {
-            if (ghostItems.get(slot).isEmpty()) {
-                return false;
-            }
+            if (ghostItems.get(slot).isEmpty()) return false;
         }
         return true;
     }
@@ -90,9 +135,7 @@ public class MenuBoardBlockEntity extends BlockEntity {
     public int getFilledSlotCount() {
         int filled = 0;
         for (int slot = 0; slot < SLOT_COUNT; slot++) {
-            if (!ghostItems.get(slot).isEmpty()) {
-                filled++;
-            }
+            if (!ghostItems.get(slot).isEmpty()) filled++;
         }
         return filled;
     }
@@ -115,24 +158,18 @@ public class MenuBoardBlockEntity extends BlockEntity {
 
     public void setRestaurantHeartPos(BlockPos pos) {
         BlockPos newPos = pos == null ? null : pos.immutable();
-        if (java.util.Objects.equals(restaurantHeartPos, newPos)) {
-            return;
-        }
+        if (Objects.equals(restaurantHeartPos, newPos)) return;
         restaurantHeartPos = newPos;
         setChanged();
     }
 
-    private void syncRestaurantHud() {
-        if (!(level instanceof ServerLevel serverLevel)) return;
-
-        RestaurantHeartBlockEntity heart = restaurantHeartPos == null
-                ? RestaurantManager.findContaining(serverLevel, worldPosition).orElse(null)
+    private RestaurantHeartBlockEntity resolveRestaurantHeart(ServerLevel serverLevel) {
+        RestaurantHeartBlockEntity linked = restaurantHeartPos == null
+                ? null
                 : RestaurantManager.get(serverLevel, restaurantHeartPos).orElse(null);
-        if (heart != null) {
-            restaurantHeartPos = heart.getBlockPos().immutable();
-            heart.setMenuBoardPos(worldPosition);
-            heart.syncHudNow(serverLevel);
-        }
+        return linked != null
+                ? linked
+                : RestaurantManager.findContaining(serverLevel, worldPosition).orElse(null);
     }
 
     private void syncToClient() {
@@ -176,7 +213,9 @@ public class MenuBoardBlockEntity extends BlockEntity {
             }
             ResourceLocation id = ResourceLocation.tryParse(tag.getString(key));
             Item item = id == null ? null : BuiltInRegistries.ITEM.get(id);
-            ghostItems.set(i, item == null || item == net.minecraft.world.item.Items.AIR ? ItemStack.EMPTY : new ItemStack(item));
+            ghostItems.set(i, item == null || item == net.minecraft.world.item.Items.AIR
+                    ? ItemStack.EMPTY
+                    : new ItemStack(item));
         }
     }
 }

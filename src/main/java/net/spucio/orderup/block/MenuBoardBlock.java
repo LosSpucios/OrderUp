@@ -3,6 +3,7 @@ package net.spucio.orderup.block;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
@@ -48,10 +49,7 @@ public class MenuBoardBlock extends BaseEntityBlock {
     public void setPlacedBy(Level level, BlockPos pos, BlockState state, @Nullable LivingEntity placer, ItemStack stack) {
         super.setPlacedBy(level, pos, state, placer, stack);
         if (!level.isClientSide && level.getBlockEntity(pos) instanceof MenuBoardBlockEntity menu) {
-            RestaurantHeartBlockEntity heart = linkToContainingRestaurant(level, pos, menu);
-            if (heart != null && level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
-                heart.syncHudNow(serverLevel);
-            }
+            linkToContainingRestaurant(level, pos, menu);
         }
     }
 
@@ -71,16 +69,19 @@ public class MenuBoardBlock extends BaseEntityBlock {
 
     @Override
     protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean movedByPiston) {
+        RestaurantHeartBlockEntity heart = null;
         if (!state.is(newState.getBlock()) && !level.isClientSide) {
-            RestaurantHeartBlockEntity heart = RestaurantManager.findContaining(level, pos).orElse(null);
+            heart = RestaurantManager.findContaining(level, pos).orElse(null);
             if (heart != null && pos.equals(heart.getMenuBoardPos())) {
                 heart.setMenuBoardPos(null);
-                if (level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
-                    heart.syncHudNow(serverLevel);
-                }
             }
         }
+
         super.onRemove(state, level, pos, newState, movedByPiston);
+
+        if (heart != null && level instanceof ServerLevel serverLevel) {
+            RestaurantManager.synchronizeMenuBoards(serverLevel, heart, null);
+        }
     }
 
     private static RestaurantHeartBlockEntity linkToContainingRestaurant(
@@ -94,7 +95,11 @@ public class MenuBoardBlock extends BaseEntityBlock {
         }
 
         menu.setRestaurantHeartPos(heart.getBlockPos());
-        heart.setMenuBoardPos(menuPos);
+        if (level instanceof ServerLevel serverLevel) {
+            RestaurantManager.synchronizeMenuBoards(serverLevel, heart, menu);
+        } else {
+            heart.setMenuBoardPos(menuPos);
+        }
         return heart;
     }
 

@@ -89,7 +89,7 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
 
         poseStack.pushPose();
         poseStack.translate(0.0F, -12.0F, -0.22F);
-        poseStack.scale(-1.0F, 1.0F, 1.0F);
+        poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
         font.drawInBatch(
                 Component.literal(text),
                 -font.width(text) / 2.0F,
@@ -210,11 +210,11 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
         /*
          * Do not undo the billboard mirror with a negative X scale. A single
          * negative axis changes the matrix handedness and makes many item
-         * models render edge-on or get culled. A 180-degree Y rotation fixes
-         * the horizontal orientation while keeping a normal, non-mirrored
-         * coordinate system for the item renderer.
+         * models render edge-on or get culled. A 180-degree Z rotation cancels both billboard axis flips, so the
+         * item remains upright and non-mirrored without changing matrix
+         * handedness for the item renderer.
          */
-        poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
+        poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
         poseStack.scale(ITEM_SCALE, ITEM_SCALE, ITEM_SCALE);
         Minecraft.getInstance().getItemRenderer().renderStatic(
                 stack,
@@ -253,7 +253,7 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
         Font font = Minecraft.getInstance().font;
         poseStack.pushPose();
         poseStack.translate(x, y, -0.26F);
-        poseStack.scale(-1.0F, 1.0F, 1.0F);
+        poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
         font.drawInBatch(
                 Component.literal(mark),
                 -font.width(mark) / 2.0F,
