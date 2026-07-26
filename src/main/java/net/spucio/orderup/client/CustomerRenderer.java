@@ -270,11 +270,14 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
 
         poseStack.pushPose();
         /*
-         * Keep the old vanilla-font check/X artwork, but place it only a tiny
-         * distance in front of the bubble. SEE_THROUGH makes the mark render
-         * over the already-flushed item without visibly floating away from it.
+         * Keep the old vanilla-font check/X artwork, but adjust the offsets a
+         * little per mark type: the checkmark sits slightly higher on the item,
+         * while the X is pushed a bit farther forward so it does not visually
+         * sink into thicker item models.
          */
-        poseStack.translate(x + 1.0F, y + 3.0F, -0.30F);
+        float yOffset = entity.isOrderFailed() ? 3.0F : 1.5F;
+        float zOffset = entity.isOrderFailed() ? -0.36F : -0.30F;
+        poseStack.translate(x + 1.0F, y + yOffset, zOffset);
         poseStack.scale(1.65F, 1.65F, 1.65F);
         font.drawInBatch(
                 Component.literal(mark),
