@@ -276,7 +276,7 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
          * sink into thicker item models.
          */
         float xOffset = 2.0F;
-        float yOffset = entity.isOrderFailed() ? 0.0F : -1.5F;
+        float yOffset = entity.isOrderFailed() ? 3.0F : -1.5F;
         float zOffset = entity.isOrderFailed() ? -0.38F : -0.30F;
         poseStack.translate(x + xOffset, y + yOffset, zOffset);
         poseStack.scale(1.65F, 1.65F, 1.65F);
