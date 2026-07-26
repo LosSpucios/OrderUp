@@ -1,0 +1,9 @@
+{
+  "textures":{"wood":"minecraft:block/dark_oak_planks","panel":"orderup:block/open_sign_closed","particle":"minecraft:block/dark_oak_planks"},
+  "elements":[
+    {"from":[2,6,6],"to":[14,15,10],"faces":{"down":{"texture":"#wood"},"up":{"texture":"#wood"},"north":{"texture":"#wood"},"south":{"texture":"#wood"},"west":{"texture":"#wood"},"east":{"texture":"#wood"}}},
+    {"from":[3,7,5.75],"to":[13,14,6.1],"faces":{"north":{"texture":"#panel"}}},
+    {"from":[7,0,7],"to":[9,6,9],"faces":{"down":{"texture":"#wood"},"up":{"texture":"#wood"},"north":{"texture":"#wood"},"south":{"texture":"#wood"},"west":{"texture":"#wood"},"east":{"texture":"#wood"}}},
+    {"from":[4,0,5],"to":[12,1,11],"faces":{"down":{"texture":"#wood"},"up":{"texture":"#wood"},"north":{"texture":"#wood"},"south":{"texture":"#wood"},"west":{"texture":"#wood"},"east":{"texture":"#wood"}}}
+  ]
+}

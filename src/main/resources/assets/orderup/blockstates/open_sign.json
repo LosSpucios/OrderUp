@@ -1,12 +1,20 @@
 {
   "variants": {
-    "facing=north,open=true": {"model":"orderup:block/open_sign"},
-    "facing=east,open=true": {"model":"orderup:block/open_sign","y":90},
-    "facing=south,open=true": {"model":"orderup:block/open_sign","y":180},
-    "facing=west,open=true": {"model":"orderup:block/open_sign","y":270},
-    "facing=north,open=false": {"model":"orderup:block/open_sign"},
-    "facing=east,open=false": {"model":"orderup:block/open_sign","y":90},
-    "facing=south,open=false": {"model":"orderup:block/open_sign","y":180},
-    "facing=west,open=false": {"model":"orderup:block/open_sign","y":270}
+    "facing=north,open=true,wall=false":{"model":"orderup:block/open_sign_floor_open"},
+    "facing=east,open=true,wall=false":{"model":"orderup:block/open_sign_floor_open","y":90},
+    "facing=south,open=true,wall=false":{"model":"orderup:block/open_sign_floor_open","y":180},
+    "facing=west,open=true,wall=false":{"model":"orderup:block/open_sign_floor_open","y":270},
+    "facing=north,open=false,wall=false":{"model":"orderup:block/open_sign_floor_closed"},
+    "facing=east,open=false,wall=false":{"model":"orderup:block/open_sign_floor_closed","y":90},
+    "facing=south,open=false,wall=false":{"model":"orderup:block/open_sign_floor_closed","y":180},
+    "facing=west,open=false,wall=false":{"model":"orderup:block/open_sign_floor_closed","y":270},
+    "facing=north,open=true,wall=true":{"model":"orderup:block/open_sign_wall_open"},
+    "facing=east,open=true,wall=true":{"model":"orderup:block/open_sign_wall_open","y":90},
+    "facing=south,open=true,wall=true":{"model":"orderup:block/open_sign_wall_open","y":180},
+    "facing=west,open=true,wall=true":{"model":"orderup:block/open_sign_wall_open","y":270},
+    "facing=north,open=false,wall=true":{"model":"orderup:block/open_sign_wall_closed"},
+    "facing=east,open=false,wall=true":{"model":"orderup:block/open_sign_wall_closed","y":90},
+    "facing=south,open=false,wall=true":{"model":"orderup:block/open_sign_wall_closed","y":180},
+    "facing=west,open=false,wall=true":{"model":"orderup:block/open_sign_wall_closed","y":270}
   }
 }
