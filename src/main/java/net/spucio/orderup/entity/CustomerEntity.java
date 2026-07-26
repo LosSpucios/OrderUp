@@ -22,6 +22,8 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.ai.goal.OpenDoorGoal;
+import net.minecraft.world.entity.ai.navigation.GroundPathNavigation;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.npc.VillagerData;
 import net.minecraft.world.entity.npc.VillagerDataHolder;
@@ -102,7 +104,16 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
 
     @Override
     protected void registerGoals() {
-        // Restaurant navigation is controlled by the state machine below.
+        /*
+         * The restaurant state machine still owns movement targets. This small
+         * vanilla goal only handles wooden doors encountered by the active path;
+         * true means the customer closes the door after passing through it.
+         */
+        if (navigation instanceof GroundPathNavigation groundNavigation) {
+            groundNavigation.setCanPassDoors(true);
+            groundNavigation.setCanOpenDoors(true);
+        }
+        goalSelector.addGoal(0, new OpenDoorGoal(this, true));
     }
 
     @Override

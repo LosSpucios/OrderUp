@@ -168,7 +168,8 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
                     bubbleWidth / 2.0F - 13.0F,
                     -3.0F,
                     poseStack,
-                    buffer
+                    buffer,
+                    packedLight
             );
         }
     }
@@ -263,19 +264,31 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
     ) {
         if (!entity.isOrderFailed() && !delivered) return;
 
+        String mark = entity.isOrderFailed() ? "X" : "✓";
         int color = entity.isOrderFailed() ? 0xFFFF3B30 : 0xFF39D353;
+        Font font = Minecraft.getInstance().font;
 
         poseStack.pushPose();
-        // A large negative Z offset places the mark safely in front of the GUI item model.
-        poseStack.translate(x + 1.0F, y + 2.0F, -10.0F);
-        // The root billboard has both X and Y inverted. This rotation cancels that inversion
-        // only for the status artwork, keeping the check and X in their normal orientation.
+        /*
+         * Keep the old vanilla-font check/X artwork, but place it only a tiny
+         * distance in front of the bubble. SEE_THROUGH makes the mark render
+         * over the already-flushed item without visibly floating away from it.
+         */
+        poseStack.translate(x + 1.0F, y + 3.0F, -0.30F);
         poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
-        if (entity.isOrderFailed()) {
-            drawPixelCross(poseStack, buffer, 13.0F, 2.7F, 0.0F, color);
-        } else {
-            drawPixelCheck(poseStack, buffer, 13.0F, 2.7F, 0.0F, color);
-        }
+        poseStack.scale(1.65F, 1.65F, 1.65F);
+        font.drawInBatch(
+                Component.literal(mark),
+                -font.width(mark) / 2.0F,
+                -font.lineHeight / 2.0F,
+                color,
+                true,
+                poseStack.last().pose(),
+                buffer,
+                Font.DisplayMode.SEE_THROUGH,
+                0,
+                packedLight
+        );
         poseStack.popPose();
     }
 
@@ -284,101 +297,36 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
             float x,
             float y,
             PoseStack poseStack,
-            MultiBufferSource buffer
+            MultiBufferSource buffer,
+            int packedLight
     ) {
+        String mark = failed ? "X" : "✓";
         int fill = failed ? 0xFFF04A3E : 0xFF2FA84F;
         int border = failed ? 0xFF7A1F1A : 0xFF145C28;
+        Font font = Minecraft.getInstance().font;
+
+        // Restore the old compact badge and keep it almost flush with the cloud.
+        drawFlatRect(poseStack, buffer, x - 10.0F, y - 10.0F, x + 10.0F, y + 10.0F, -0.26F, border);
+        drawFlatRect(poseStack, buffer, x - 8.0F, y - 8.0F, x + 8.0F, y + 8.0F, -0.28F, fill);
 
         poseStack.pushPose();
-        poseStack.translate(x, y, -10.5F);
+        poseStack.translate(x, y, -0.34F);
+        // The root billboard flips X and Y; this restores the glyph's normal orientation.
         poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
-
-        drawFlatRect(poseStack, buffer, -10.0F, -10.0F, 10.0F, 10.0F, 0.0F, border);
-        drawFlatRect(poseStack, buffer, -8.0F, -8.0F, 8.0F, 8.0F, -0.02F, fill);
-
-        if (failed) {
-            drawPixelCross(poseStack, buffer, 11.0F, 2.5F, -0.05F, 0xFFFFFFFF);
-        } else {
-            drawPixelCheck(poseStack, buffer, 11.0F, 2.5F, -0.05F, 0xFFFFFFFF);
-        }
+        poseStack.scale(1.35F, 1.35F, 1.35F);
+        font.drawInBatch(
+                Component.literal(mark),
+                -font.width(mark) / 2.0F,
+                -font.lineHeight / 2.0F,
+                0xFFFFFFFF,
+                true,
+                poseStack.last().pose(),
+                buffer,
+                Font.DisplayMode.SEE_THROUGH,
+                0,
+                packedLight
+        );
         poseStack.popPose();
-    }
-
-    private static void drawPixelCheck(
-            PoseStack poseStack,
-            MultiBufferSource buffer,
-            float size,
-            float thickness,
-            float z,
-            int argb
-    ) {
-        float half = size / 2.0F;
-        drawThickLine(
-                poseStack,
-                buffer,
-                -half,
-                0.0F,
-                -size * 0.12F,
-                -size * 0.34F,
-                thickness,
-                z,
-                argb
-        );
-        drawThickLine(
-                poseStack,
-                buffer,
-                -size * 0.12F,
-                -size * 0.34F,
-                half,
-                size * 0.40F,
-                thickness,
-                z,
-                argb
-        );
-    }
-
-    private static void drawPixelCross(
-            PoseStack poseStack,
-            MultiBufferSource buffer,
-            float size,
-            float thickness,
-            float z,
-            int argb
-    ) {
-        float half = size / 2.0F;
-        drawThickLine(poseStack, buffer, -half, -half, half, half, thickness, z, argb);
-        drawThickLine(poseStack, buffer, -half, half, half, -half, thickness, z - 0.01F, argb);
-    }
-
-    private static void drawThickLine(
-            PoseStack poseStack,
-            MultiBufferSource buffer,
-            float x1,
-            float y1,
-            float x2,
-            float y2,
-            float thickness,
-            float z,
-            int argb
-    ) {
-        float dx = x2 - x1;
-        float dy = y2 - y1;
-        float length = (float) Math.sqrt(dx * dx + dy * dy);
-        if (length <= 0.0001F) return;
-
-        float normalX = -dy / length * thickness / 2.0F;
-        float normalY = dx / length * thickness / 2.0F;
-        int alpha = argb >>> 24 & 255;
-        int red = argb >>> 16 & 255;
-        int green = argb >>> 8 & 255;
-        int blue = argb & 255;
-
-        VertexConsumer consumer = buffer.getBuffer(RenderType.debugQuads());
-        PoseStack.Pose pose = poseStack.last();
-        consumer.addVertex(pose, x1 + normalX, y1 + normalY, z).setColor(red, green, blue, alpha);
-        consumer.addVertex(pose, x2 + normalX, y2 + normalY, z).setColor(red, green, blue, alpha);
-        consumer.addVertex(pose, x2 - normalX, y2 - normalY, z).setColor(red, green, blue, alpha);
-        consumer.addVertex(pose, x1 - normalX, y1 - normalY, z).setColor(red, green, blue, alpha);
     }
 
     private static void drawFlatRect(
