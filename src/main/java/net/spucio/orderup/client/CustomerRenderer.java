@@ -25,6 +25,9 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
     private static final ResourceLocation THOUGHT_BUBBLE =
             ResourceLocation.fromNamespaceAndPath(OrderUp.MOD_ID, "textures/entity/thought_bubble.png");
 
+    private static final float BILLBOARD_SCALE = 0.025F;
+    private static final float ITEM_SCALE = 14.0F;
+
     public CustomerRenderer(EntityRendererProvider.Context context) {
         super(context, new VillagerModel<>(context.bakeLayer(ModelLayers.VILLAGER)), 0.5F);
     }
@@ -54,15 +57,19 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
         }
 
         poseStack.pushPose();
-        poseStack.translate(0.0D, entity.getBbHeight() + 0.58D, 0.0D);
 
-        // Yaw-only billboard: the cloud follows the player around the customer,
-        // but stays vertical instead of tilting with the camera pitch.
+        /*
+         * Keep the entire cloud above the villager model. This prevents the head
+         * from depth-clipping the lower part of the texture.
+         */
+        poseStack.translate(0.0D, entity.getBbHeight() + 0.82D, 0.0D);
+
+        // Yaw-only billboard: follows the viewer around the customer on the X/Z plane.
         poseStack.mulPose(Axis.YP.rotationDegrees(-entityRenderDispatcher.camera.getYRot()));
-        poseStack.scale(-0.025F, -0.025F, 0.025F);
+        poseStack.scale(-BILLBOARD_SCALE, -BILLBOARD_SCALE, BILLBOARD_SCALE);
 
         if (state == CustomerEntity.THINKING) {
-            drawBubbleTexture(poseStack, buffer, 72.0F, 36.0F, packedLight);
+            drawBubbleTexture(poseStack, buffer, 80.0F, 44.0F, packedLight);
             drawThinkingDots(entity, poseStack, buffer, packedLight);
         } else {
             drawOrderBubble(entity, poseStack, buffer, packedLight);
@@ -79,13 +86,15 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
     ) {
         String text = ".".repeat(1 + (entity.tickCount / 10) % 3);
         Font font = Minecraft.getInstance().font;
+
         poseStack.pushPose();
-        poseStack.translate(0.0F, 0.0F, -0.20F);
+        poseStack.translate(0.0F, -12.0F, -0.22F);
+        poseStack.scale(-1.0F, 1.0F, 1.0F);
         font.drawInBatch(
                 Component.literal(text),
                 -font.width(text) / 2.0F,
-                -10.0F,
-                0xFF30251E,
+                0.0F,
+                0xFF3A2A1E,
                 true,
                 poseStack.last().pose(),
                 buffer,
@@ -106,14 +115,20 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
         ItemStack drink = entity.getOrderedDrink();
         boolean hasDrink = !drink.isEmpty();
 
-        drawBubbleTexture(poseStack, buffer, hasDrink ? 96.0F : 72.0F, 48.0F, packedLight);
+        drawBubbleTexture(
+                poseStack,
+                buffer,
+                hasDrink ? 104.0F : 80.0F,
+                hasDrink ? 56.0F : 52.0F,
+                packedLight
+        );
 
-        float foodX = hasDrink ? -15.0F : 0.0F;
-        renderOrderItem(entity, food, foodX, -15.0F, poseStack, buffer, packedLight, entity.getId());
+        float foodX = hasDrink ? -18.0F : 0.0F;
+        renderOrderItem(entity, food, foodX, -17.0F, poseStack, buffer, packedLight, entity.getId());
         renderStatusMark(
                 entity,
-                foodX + 7.0F,
-                -25.0F,
+                foodX + 8.0F,
+                -29.0F,
                 entity.isFoodDelivered(),
                 poseStack,
                 buffer,
@@ -121,12 +136,12 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
         );
 
         if (hasDrink) {
-            float drinkX = 15.0F;
-            renderOrderItem(entity, drink, drinkX, -15.0F, poseStack, buffer, packedLight, entity.getId() + 1);
+            float drinkX = 18.0F;
+            renderOrderItem(entity, drink, drinkX, -17.0F, poseStack, buffer, packedLight, entity.getId() + 1);
             renderStatusMark(
                     entity,
-                    drinkX + 7.0F,
-                    -25.0F,
+                    drinkX + 8.0F,
+                    -29.0F,
                     entity.isDrinkDelivered(),
                     poseStack,
                     buffer,
@@ -144,15 +159,19 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
     ) {
         float minX = -width / 2.0F;
         float maxX = width / 2.0F;
-        float minY = -height + 7.0F;
-        float maxY = 7.0F;
+        float minY = -height + 8.0F;
+        float maxY = 8.0F;
 
-        VertexConsumer consumer = buffer.getBuffer(RenderType.entityTranslucent(THOUGHT_BUBBLE));
+        /*
+         * The asset uses hard alpha edges, so cutout-no-cull keeps the pixel-art
+         * border crisp and visible from either side.
+         */
+        VertexConsumer consumer = buffer.getBuffer(RenderType.entityCutoutNoCull(THOUGHT_BUBBLE));
         PoseStack.Pose pose = poseStack.last();
-        bubbleVertex(consumer, pose, minX, maxY, 0.10F, 0.0F, 1.0F, packedLight);
-        bubbleVertex(consumer, pose, maxX, maxY, 0.10F, 1.0F, 1.0F, packedLight);
-        bubbleVertex(consumer, pose, maxX, minY, 0.10F, 1.0F, 0.0F, packedLight);
-        bubbleVertex(consumer, pose, minX, minY, 0.10F, 0.0F, 0.0F, packedLight);
+        bubbleVertex(consumer, pose, minX, maxY, 0.08F, 0.0F, 1.0F, packedLight);
+        bubbleVertex(consumer, pose, maxX, maxY, 0.08F, 1.0F, 1.0F, packedLight);
+        bubbleVertex(consumer, pose, maxX, minY, 0.08F, 1.0F, 0.0F, packedLight);
+        bubbleVertex(consumer, pose, minX, minY, 0.08F, 0.0F, 0.0F, packedLight);
     }
 
     private static void bubbleVertex(
@@ -186,8 +205,14 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
         if (stack.isEmpty()) return;
 
         poseStack.pushPose();
-        poseStack.translate(x, y, -0.05F);
-        poseStack.scale(14.0F, 14.0F, 14.0F);
+        poseStack.translate(x, y, -0.12F);
+
+        /*
+         * The billboard matrix mirrors X so text and textures face the camera.
+         * Undo that mirror only for the item model; otherwise GUI items appear
+         * horizontally reversed.
+         */
+        poseStack.scale(-ITEM_SCALE, ITEM_SCALE, ITEM_SCALE);
         Minecraft.getInstance().getItemRenderer().renderStatic(
                 stack,
                 ItemDisplayContext.GUI,
@@ -214,21 +239,22 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
         int background;
         if (entity.isOrderFailed()) {
             mark = "X";
-            background = 0xD8B8322D;
+            background = 0xE0B8322D;
         } else if (delivered) {
             mark = "✓";
-            background = 0xD8328A43;
+            background = 0xE0328A43;
         } else {
             return;
         }
 
         Font font = Minecraft.getInstance().font;
         poseStack.pushPose();
-        poseStack.translate(0.0F, 0.0F, -0.25F);
+        poseStack.translate(x, y, -0.26F);
+        poseStack.scale(-1.0F, 1.0F, 1.0F);
         font.drawInBatch(
                 Component.literal(mark),
-                x - font.width(mark) / 2.0F,
-                y,
+                -font.width(mark) / 2.0F,
+                0.0F,
                 0xFFFFFFFF,
                 true,
                 poseStack.last().pose(),

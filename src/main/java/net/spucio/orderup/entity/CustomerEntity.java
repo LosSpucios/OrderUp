@@ -58,8 +58,7 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
     private static final double ARMOR_STAND_PASSENGER_HEIGHT = 1.975D;
     private static final double CHAIR_SEAT_HEIGHT = 0.50D;
     private static final double SEAT_ENTITY_Y_OFFSET = CHAIR_SEAT_HEIGHT - ARMOR_STAND_PASSENGER_HEIGHT;
-    private static final double FINAL_APPROACH_OFFSET = 0.68D;
-    private static final double SIT_DISTANCE_SQR = 0.82D * 0.82D;
+    private static final double SIT_DISTANCE_SQR = 1.35D * 1.35D;
     private static final int MAX_LEAVING_TICKS = 200;
 
     private static final EntityDataAccessor<Integer> DATA_STATE = SynchedEntityData.defineId(CustomerEntity.class, EntityDataSerializers.INT);
@@ -78,7 +77,6 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
     private int stuckTicks;
     private int pathFailureTicks;
     private int leavingTicks;
-    private int finalApproachTicks;
     private double lastProgressX;
     private double lastProgressZ;
     private UUID seatUuid;
@@ -130,7 +128,6 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         angryRewardClaimed = false;
         pathFailureTicks = 0;
         leavingTicks = 0;
-        finalApproachTicks = 0;
         chairApproachDirection = null;
         setMood(CustomerMood.NEUTRAL);
     }
@@ -139,81 +136,32 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         BlockPos chair = getTargetChair();
         if (chair == null) return false;
 
-        BlockPos approach = findChairApproach(chair);
-        if (approach == null) return false;
-
         lastProgressX = getX();
         lastProgressZ = getZ();
         stuckTicks = 0;
-        finalApproachTicks = 0;
 
-        boolean started = getNavigation().moveTo(
-                approach.getX() + 0.5D,
-                approach.getY(),
-                approach.getZ() + 0.5D,
-                0.55D
-        );
-        if (started) pathFailureTicks = 0;
-        return started;
-    }
-
-    private BlockPos findChairApproach(BlockPos chair) {
-        Direction tableDirection = Direction.NORTH;
-        var chairState = level().getBlockState(chair);
-        if (chairState.is(ModContent.CHAIR.get()) && chairState.hasProperty(ChairBlock.FACING)) {
-            tableDirection = chairState.getValue(ChairBlock.FACING);
-        }
-
-        // The table blocks one side and the chair backrest blocks the opposite side.
-        // Prefer either open side of the chair, then fall back to the backrest side.
-        Direction firstSide = tableDirection.getClockWise();
-        Direction secondSide = tableDirection.getCounterClockWise();
-        BlockPos firstSidePos = chair.relative(firstSide);
-        BlockPos secondSidePos = chair.relative(secondSide);
-        if (secondSidePos.distSqr(blockPosition()) < firstSidePos.distSqr(blockPosition())) {
-            Direction swap = firstSide;
-            firstSide = secondSide;
-            secondSide = swap;
-        }
-
-        Direction[] order = {
-                firstSide,
-                secondSide,
-                tableDirection.getOpposite()
-        };
-
-        BlockPos best = null;
-        Direction bestDirection = null;
-        double bestDistance = Double.MAX_VALUE;
-        boolean bestReachable = false;
-        for (Direction direction : order) {
-            BlockPos candidate = chair.relative(direction);
-            if (!isSafeApproach(candidate)) continue;
-
-            Path path = getNavigation().createPath(candidate, 1);
-            if (path == null) continue;
-
-            double distance = candidate.distSqr(blockPosition());
-            boolean reachable = path.canReach();
-            if ((reachable && !bestReachable)
-                    || (reachable == bestReachable && distance < bestDistance)) {
-                best = candidate;
-                bestDirection = direction;
-                bestDistance = distance;
-                bestReachable = reachable;
+        /*
+         * The chair itself remains the target. Vanilla navigation may stop on any
+         * reachable side; once the customer is roughly one block away,
+         * tickWalking snaps them onto their reserved chair.
+         */
+        Path path = getNavigation().createPath(chair, 1);
+        if (path != null) {
+            boolean started = getNavigation().moveTo(path, 0.58D);
+            if (started) {
+                pathFailureTicks = 0;
+                return true;
             }
         }
 
-        chairApproachDirection = bestDirection;
-        return best;
-    }
-
-    private boolean isSafeApproach(BlockPos pos) {
-        BlockPos floor = pos.below();
-        return level().getFluidState(pos).isEmpty()
-                && level().getBlockState(pos).getCollisionShape(level(), pos).isEmpty()
-                && level().getBlockState(pos.above()).getCollisionShape(level(), pos.above()).isEmpty()
-                && level().getBlockState(floor).isFaceSturdy(level(), floor, Direction.UP);
+        boolean started = getNavigation().moveTo(
+                chair.getX() + 0.5D,
+                chair.getY(),
+                chair.getZ() + 0.5D,
+                0.58D
+        );
+        if (started) pathFailureTicks = 0;
+        return started;
     }
 
     @Override
@@ -264,42 +212,19 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         double chairZ = chair.getZ() + 0.5D;
         double dx = getX() - chairX;
         double dz = getZ() - chairZ;
-        double chairDistanceSqr = dx * dx + dz * dz;
+        double horizontalDistanceSqr = dx * dx + dz * dz;
+        double verticalDistance = Math.abs(getY() - chair.getY());
 
-        Direction approachDirection = chairApproachDirection;
-        if (approachDirection == null) {
-            findChairApproach(chair);
-            approachDirection = chairApproachDirection;
-        }
-        if (approachDirection == null) {
-            approachDirection = getChairFrontDirection(chair).getClockWise();
-        }
-
-        double finalX = chairX + approachDirection.getStepX() * FINAL_APPROACH_OFFSET;
-        double finalZ = chairZ + approachDirection.getStepZ() * FINAL_APPROACH_OFFSET;
-        double finalDx = getX() - finalX;
-        double finalDz = getZ() - finalZ;
-        double finalDistanceSqr = finalDx * finalDx + finalDz * finalDz;
-
-        if (chairDistanceSqr <= SIT_DISTANCE_SQR || finalDistanceSqr <= 0.12D) {
+        /*
+         * No fixed approach side is required. The customer may reach the chair
+         * from any direction; being approximately one block from their reserved
+         * chair is enough to sit.
+         */
+        if (horizontalDistanceSqr <= SIT_DISTANCE_SQR && verticalDistance <= 1.6D) {
+            rememberApproachDirection(chairX, chairZ);
             sitDown(level, chair);
             return;
         }
-
-        // Vanilla navigation stops around the center of the adjacent block. MoveControl
-        // performs the final close approach from an open side of the chair. The timeout
-        // is a safety net for narrow interiors where collision prevents the last pixels.
-        if (chairDistanceSqr <= 2.25D) {
-            getNavigation().stop();
-            getMoveControl().setWantedPosition(finalX, chair.getY(), finalZ, 0.82D);
-            finalApproachTicks++;
-            pathFailureTicks = 0;
-            if (finalApproachTicks > 30 && chairDistanceSqr <= 1.45D) {
-                sitDown(level, chair);
-            }
-            return;
-        }
-        finalApproachTicks = 0;
 
         if (tickCount % 20 == 0 && getNavigation().isDone()) {
             if (beginWalkingToChair()) {
@@ -321,6 +246,16 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
 
         if (pathFailureTicks > 240) {
             beginLeaving();
+        }
+    }
+
+    private void rememberApproachDirection(double chairX, double chairZ) {
+        double dx = getX() - chairX;
+        double dz = getZ() - chairZ;
+        if (Math.abs(dx) >= Math.abs(dz)) {
+            chairApproachDirection = dx >= 0.0D ? Direction.EAST : Direction.WEST;
+        } else {
+            chairApproachDirection = dz >= 0.0D ? Direction.SOUTH : Direction.NORTH;
         }
     }
 
@@ -418,7 +353,6 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         stuckTicks = 0;
         pathFailureTicks = 0;
         leavingTicks = 0;
-        finalApproachTicks = 0;
         chairApproachDirection = null;
     }
 
@@ -451,7 +385,6 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         entityData.set(DATA_STATE, THINKING);
         stateTimer = 45 + random.nextInt(46);
         stuckTicks = 0;
-        finalApproachTicks = 0;
     }
 
     private void chooseOrder(ServerLevel level, RestaurantHeartBlockEntity heart) {
@@ -840,7 +773,6 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
 
         stateTimer = tag.getInt("StateTimer");
         leavingTicks = Math.max(0, tag.getInt("LeavingTicks"));
-        finalApproachTicks = 0;
         chairApproachDirection = null;
         orderPrice = tag.getInt("OrderPrice");
         entityData.set(DATA_FOOD, loadItemId(tag, "Food"));
