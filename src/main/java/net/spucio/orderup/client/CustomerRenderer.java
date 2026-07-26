@@ -205,14 +205,17 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
         if (stack.isEmpty()) return;
 
         poseStack.pushPose();
-        poseStack.translate(x, y, -0.12F);
+        poseStack.translate(x, y, -0.18F);
 
         /*
-         * The billboard matrix mirrors X so text and textures face the camera.
-         * Undo that mirror only for the item model; otherwise GUI items appear
-         * horizontally reversed.
+         * Do not undo the billboard mirror with a negative X scale. A single
+         * negative axis changes the matrix handedness and makes many item
+         * models render edge-on or get culled. A 180-degree Y rotation fixes
+         * the horizontal orientation while keeping a normal, non-mirrored
+         * coordinate system for the item renderer.
          */
-        poseStack.scale(-ITEM_SCALE, ITEM_SCALE, ITEM_SCALE);
+        poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
+        poseStack.scale(ITEM_SCALE, ITEM_SCALE, ITEM_SCALE);
         Minecraft.getInstance().getItemRenderer().renderStatic(
                 stack,
                 ItemDisplayContext.GUI,
