@@ -88,7 +88,7 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
         Font font = Minecraft.getInstance().font;
 
         poseStack.pushPose();
-        poseStack.translate(0.0F, -31.0F, -0.22F);
+        poseStack.translate(0.0F, -8.0F, -0.22F);
         poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
         font.drawInBatch(
                 Component.literal(text),
@@ -275,7 +275,6 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
          * over the already-flushed item without visibly floating away from it.
          */
         poseStack.translate(x + 1.0F, y + 3.0F, -0.30F);
-        poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
         poseStack.scale(1.65F, 1.65F, 1.65F);
         font.drawInBatch(
                 Component.literal(mark),
@@ -311,8 +310,6 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
 
         poseStack.pushPose();
         poseStack.translate(x, y, -0.34F);
-        // The root billboard flips X and Y; this restores the glyph's normal orientation.
-        poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
         poseStack.scale(1.35F, 1.35F, 1.35F);
         font.drawInBatch(
                 Component.literal(mark),
