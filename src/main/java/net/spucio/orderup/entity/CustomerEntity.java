@@ -34,6 +34,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.pathfinder.Path;
+import net.minecraft.world.phys.Vec3;
 import net.spucio.orderup.ModContent;
 import net.spucio.orderup.ModParticles;
 import net.spucio.orderup.block.ChairBlock;
@@ -92,6 +93,7 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         return Mob.createMobAttributes()
                 .add(Attributes.MAX_HEALTH, 20.0D)
                 .add(Attributes.MOVEMENT_SPEED, 0.42D)
+                .add(Attributes.STEP_HEIGHT, 1.25D)
                 .add(Attributes.FOLLOW_RANGE, 48.0D);
     }
 
@@ -145,9 +147,9 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
          * reachable side; once the customer is roughly one block away,
          * tickWalking snaps them onto their reserved chair.
          */
-        Path path = getNavigation().createPath(chair, 1);
+        Path path = getNavigation().createPath(chair, 0);
         if (path != null) {
-            boolean started = getNavigation().moveTo(path, 0.58D);
+            boolean started = getNavigation().moveTo(path, 0.62D);
             if (started) {
                 pathFailureTicks = 0;
                 return true;
@@ -158,7 +160,7 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
                 chair.getX() + 0.5D,
                 chair.getY(),
                 chair.getZ() + 0.5D,
-                0.58D
+                0.62D
         );
         if (started) pathFailureTicks = 0;
         return started;
@@ -226,7 +228,9 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
             return;
         }
 
-        if (tickCount % 20 == 0 && getNavigation().isDone()) {
+        assistChairTraversal(chair, chairX, chairZ, horizontalDistanceSqr);
+
+        if (tickCount % 10 == 0 && getNavigation().isDone()) {
             if (beginWalkingToChair()) {
                 pathFailureTicks = 0;
             } else {
@@ -244,9 +248,61 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
             stuckTicks = 0;
         }
 
-        if (pathFailureTicks > 240) {
+        if (pathFailureTicks > 400) {
             beginLeaving();
         }
+    }
+
+    /**
+     * Gives restaurant customers a deliberately forgiving way to reach their reserved chair.
+     * Vanilla ground pathfinding is still the primary movement system, but when terrain blocks
+     * the route the customer can jump one-block obstacles and climb a wall in the same way a
+     * spider does. The assist only runs while walking to a chair, so seated and leaving customers
+     * keep their normal behaviour.
+     */
+    private void assistChairTraversal(
+            BlockPos chair,
+            double chairX,
+            double chairZ,
+            double horizontalDistanceSqr
+    ) {
+        double towardX = chairX - getX();
+        double towardZ = chairZ - getZ();
+        double horizontalLength = Math.sqrt(towardX * towardX + towardZ * towardZ);
+        double chairHeight = chair.getY() + CHAIR_SEAT_HEIGHT;
+
+        boolean needsHeight = chairHeight > getY() + 0.35D;
+        boolean blocked = horizontalCollision && horizontalDistanceSqr > SIT_DISTANCE_SQR;
+
+        // Regular hopping handles slabs, fences and one-block ledges without waiting for a full
+        // navigation recalculation.
+        if (onGround() && (blocked || needsHeight) && tickCount % 6 == 0) {
+            getJumpControl().jump();
+        }
+
+        // Spider-like fallback. While pressing against a wall, keep a little movement toward the
+        // chair and add vertical motion. This is intentionally stronger than villager AI because
+        // a reserved chair should not stay unusable just because the terrain is awkward.
+        if (blocked && horizontalLength > 0.001D) {
+            Vec3 motion = getDeltaMovement();
+            double climbSpeed = needsHeight ? 0.34D : 0.24D;
+            double pull = 0.11D;
+            setDeltaMovement(
+                    motion.x * 0.55D + towardX / horizontalLength * pull,
+                    Math.max(motion.y, climbSpeed),
+                    motion.z * 0.55D + towardZ / horizontalLength * pull
+            );
+            hasImpulse = true;
+            resetFallDistance();
+        }
+    }
+
+    @Override
+    public boolean onClimbable() {
+        return super.onClimbable()
+                || (getCustomerState() == WALKING
+                && getTargetChair() != null
+                && horizontalCollision);
     }
 
     private void rememberApproachDirection(double chairX, double chairZ) {

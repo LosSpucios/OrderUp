@@ -88,7 +88,7 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
         Font font = Minecraft.getInstance().font;
 
         poseStack.pushPose();
-        poseStack.translate(0.0F, -12.0F, -0.22F);
+        poseStack.translate(0.0F, -31.0F, -0.22F);
         poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
         font.drawInBatch(
                 Component.literal(text),
@@ -114,21 +114,18 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
         ItemStack food = entity.getOrderedFood();
         ItemStack drink = entity.getOrderedDrink();
         boolean hasDrink = !drink.isEmpty();
+        float bubbleWidth = hasDrink ? 104.0F : 80.0F;
+        float bubbleHeight = hasDrink ? 56.0F : 52.0F;
 
-        drawBubbleTexture(
-                poseStack,
-                buffer,
-                hasDrink ? 104.0F : 80.0F,
-                hasDrink ? 56.0F : 52.0F,
-                packedLight
-        );
+        drawBubbleTexture(poseStack, buffer, bubbleWidth, bubbleHeight, packedLight);
 
         float foodX = hasDrink ? -18.0F : 0.0F;
-        renderOrderItem(entity, food, foodX, -17.0F, poseStack, buffer, packedLight, entity.getId());
-        renderStatusMark(
+        float itemY = -17.0F;
+        renderOrderItem(entity, food, foodX, itemY, poseStack, buffer, packedLight, entity.getId());
+        renderItemResultOverlay(
                 entity,
-                foodX + 8.0F,
-                -29.0F,
+                foodX,
+                itemY,
                 entity.isFoodDelivered(),
                 poseStack,
                 buffer,
@@ -137,12 +134,24 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
 
         if (hasDrink) {
             float drinkX = 18.0F;
-            renderOrderItem(entity, drink, drinkX, -17.0F, poseStack, buffer, packedLight, entity.getId() + 1);
-            renderStatusMark(
+            renderOrderItem(entity, drink, drinkX, itemY, poseStack, buffer, packedLight, entity.getId() + 1);
+            renderItemResultOverlay(
                     entity,
-                    drinkX + 8.0F,
-                    -29.0F,
+                    drinkX,
+                    itemY,
                     entity.isDrinkDelivered(),
+                    poseStack,
+                    buffer,
+                    packedLight
+            );
+        }
+
+        boolean complete = entity.isFoodDelivered() && (!hasDrink || entity.isDrinkDelivered());
+        if (entity.isOrderFailed() || complete) {
+            renderCornerResultBadge(
+                    entity.isOrderFailed(),
+                    bubbleWidth / 2.0F - 13.0F,
+                    -bubbleHeight + 15.0F,
                     poseStack,
                     buffer,
                     packedLight
@@ -229,7 +238,7 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
         poseStack.popPose();
     }
 
-    private void renderStatusMark(
+    private void renderItemResultOverlay(
             CustomerEntity entity,
             float x,
             float y,
@@ -238,34 +247,87 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
             MultiBufferSource buffer,
             int packedLight
     ) {
-        String mark;
-        int background;
-        if (entity.isOrderFailed()) {
-            mark = "X";
-            background = 0xE0B8322D;
-        } else if (delivered) {
-            mark = "✓";
-            background = 0xE0328A43;
-        } else {
-            return;
-        }
+        if (!entity.isOrderFailed() && !delivered) return;
 
+        String mark = entity.isOrderFailed() ? "X" : "✓";
+        int color = entity.isOrderFailed() ? 0xFFFF3B30 : 0xFF39D353;
         Font font = Minecraft.getInstance().font;
+
         poseStack.pushPose();
-        poseStack.translate(x, y, -0.26F);
+        poseStack.translate(x + 1.0F, y + 3.0F, -0.30F);
         poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
+        poseStack.scale(1.65F, 1.65F, 1.65F);
         font.drawInBatch(
                 Component.literal(mark),
                 -font.width(mark) / 2.0F,
-                0.0F,
+                -font.lineHeight / 2.0F,
+                color,
+                true,
+                poseStack.last().pose(),
+                buffer,
+                Font.DisplayMode.SEE_THROUGH,
+                0,
+                packedLight
+        );
+        poseStack.popPose();
+    }
+
+    private void renderCornerResultBadge(
+            boolean failed,
+            float x,
+            float y,
+            PoseStack poseStack,
+            MultiBufferSource buffer,
+            int packedLight
+    ) {
+        String mark = failed ? "X" : "✓";
+        int fill = failed ? 0xFFF04A3E : 0xFF2FA84F;
+        int border = failed ? 0xFF7A1F1A : 0xFF145C28;
+        Font font = Minecraft.getInstance().font;
+
+        // A real blocky square, not only the tiny background generated by the font renderer.
+        drawFlatRect(poseStack, buffer, x - 10.0F, y - 10.0F, x + 10.0F, y + 10.0F, -0.30F, border);
+        drawFlatRect(poseStack, buffer, x - 8.0F, y - 8.0F, x + 8.0F, y + 8.0F, -0.32F, fill);
+
+        poseStack.pushPose();
+        poseStack.translate(x, y, -0.36F);
+        poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
+        poseStack.scale(1.35F, 1.35F, 1.35F);
+        font.drawInBatch(
+                Component.literal(mark),
+                -font.width(mark) / 2.0F,
+                -font.lineHeight / 2.0F,
                 0xFFFFFFFF,
                 true,
                 poseStack.last().pose(),
                 buffer,
                 Font.DisplayMode.SEE_THROUGH,
-                background,
+                0,
                 packedLight
         );
         poseStack.popPose();
     }
+
+    private static void drawFlatRect(
+            PoseStack poseStack,
+            MultiBufferSource buffer,
+            float minX,
+            float minY,
+            float maxX,
+            float maxY,
+            float z,
+            int argb
+    ) {
+        int alpha = argb >>> 24 & 255;
+        int red = argb >>> 16 & 255;
+        int green = argb >>> 8 & 255;
+        int blue = argb & 255;
+        VertexConsumer consumer = buffer.getBuffer(RenderType.debugQuads());
+        PoseStack.Pose pose = poseStack.last();
+        consumer.addVertex(pose, minX, maxY, z).setColor(red, green, blue, alpha);
+        consumer.addVertex(pose, maxX, maxY, z).setColor(red, green, blue, alpha);
+        consumer.addVertex(pose, maxX, minY, z).setColor(red, green, blue, alpha);
+        consumer.addVertex(pose, minX, minY, z).setColor(red, green, blue, alpha);
+    }
+
 }
