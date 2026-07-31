@@ -18,6 +18,11 @@ public final class ModParticles {
             () -> new SimpleParticleType(false)
     );
 
+    public static final DeferredHolder<ParticleType<?>, SimpleParticleType> RESTAURANT_XP = PARTICLE_TYPES.register(
+            "restaurant_xp",
+            () -> new SimpleParticleType(false)
+    );
+
     public static void register(IEventBus bus) {
         PARTICLE_TYPES.register(bus);
     }

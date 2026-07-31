@@ -9,12 +9,16 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import net.spucio.orderup.ModContent;
+import net.spucio.orderup.ModParticles;
 import net.spucio.orderup.block.OpenSignBlock;
 import net.spucio.orderup.entity.CustomerEntity;
 import net.spucio.orderup.network.OrderUpNetworking;
@@ -39,6 +43,7 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
     private BlockPos menuBoardPos;
     private BlockPos openSignPos;
     private long nextCustomerSpawnTick;
+    private final List<PendingXpReward> pendingXpRewards = new ArrayList<>();
 
     public RestaurantHeartBlockEntity(BlockPos pos, BlockState state) {
         super(ModContent.RESTAURANT_HEART_BE.get(), pos, state);
@@ -58,6 +63,7 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
 
     public static void serverTick(ServerLevel level, BlockPos pos, BlockState state, RestaurantHeartBlockEntity heart) {
         long gameTime = level.getGameTime();
+        heart.tickPendingRestaurantXp(level, gameTime);
         if (gameTime % 20L == 0L) {
             heart.syncHudToNearbyMembers(level);
             heart.validateLinkedBlocks(level);
@@ -112,6 +118,82 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
         }
         setChanged();
         if (level instanceof ServerLevel serverLevel) syncHudNow(serverLevel);
+    }
+
+    /**
+     * Spawns the visual restaurant-XP orbs and delays the actual XP award until
+     * the particles finish flying. The target is the nearest crew member still
+     * standing in this restaurant; if none is available, the orbs fly into the
+     * Restaurant Heart instead.
+     */
+    public void spawnRestaurantXpReward(ServerLevel level, Vec3 origin, int amount) {
+        if (amount <= 0) return;
+
+        ServerPlayer targetPlayer = level.players().stream()
+                .filter(player -> isMember(player.getUUID()) && contains(player))
+                .min(java.util.Comparator.comparingDouble(player -> player.distanceToSqr(origin)))
+                .orElse(null);
+
+        Vec3 target = targetPlayer != null
+                ? targetPlayer.position().add(0.0D, 1.0D, 0.0D)
+                : Vec3.atCenterOf(worldPosition).add(0.0D, 0.65D, 0.0D);
+
+        int orbCount = Math.max(5, Math.min(10, 4 + amount / 5));
+        for (int i = 0; i < orbCount; i++) {
+            double startX = origin.x + (level.random.nextDouble() - 0.5D) * 0.38D;
+            double startY = origin.y + 0.05D + level.random.nextDouble() * 0.18D;
+            double startZ = origin.z + (level.random.nextDouble() - 0.5D) * 0.38D;
+            double targetX = target.x + (level.random.nextDouble() - 0.5D) * 0.24D;
+            double targetY = target.y + (level.random.nextDouble() - 0.5D) * 0.18D;
+            double targetZ = target.z + (level.random.nextDouble() - 0.5D) * 0.24D;
+
+            // A count of zero sends one particle whose three delta values are
+            // passed to the provider as an exact vector. The particle interprets
+            // that vector as its destination and animates the curved flight.
+            level.sendParticles(
+                    ModParticles.RESTAURANT_XP.get(),
+                    startX,
+                    startY,
+                    startZ,
+                    0,
+                    targetX - startX,
+                    targetY - startY,
+                    targetZ - startZ,
+                    1.0D
+            );
+        }
+
+        pendingXpRewards.add(new PendingXpReward(amount, level.getGameTime() + 26L, BlockPos.containing(target)));
+        setChanged();
+    }
+
+    private void tickPendingRestaurantXp(ServerLevel level, long gameTime) {
+        if (pendingXpRewards.isEmpty()) return;
+
+        int collectedXp = 0;
+        List<BlockPos> soundPositions = new ArrayList<>();
+        var iterator = pendingXpRewards.iterator();
+        while (iterator.hasNext()) {
+            PendingXpReward reward = iterator.next();
+            if (reward.releaseTick() > gameTime) continue;
+            collectedXp += reward.amount();
+            soundPositions.add(reward.soundPos());
+            iterator.remove();
+        }
+
+        if (collectedXp <= 0) return;
+        addRestaurantXp(collectedXp);
+        for (BlockPos soundPos : soundPositions) {
+            level.playSound(
+                    null,
+                    soundPos,
+                    SoundEvents.EXPERIENCE_ORB_PICKUP,
+                    SoundSource.PLAYERS,
+                    0.35F,
+                    1.25F + level.random.nextFloat() * 0.20F
+            );
+        }
+        setChanged();
     }
 
     public void addMoney(long amount) {
@@ -479,6 +561,16 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
         if (menuBoardPos != null) tag.putLong("MenuBoardPos", menuBoardPos.asLong());
         if (openSignPos != null) tag.putLong("OpenSignPos", openSignPos.asLong());
 
+        ListTag pendingXpList = new ListTag();
+        for (PendingXpReward reward : pendingXpRewards) {
+            CompoundTag rewardTag = new CompoundTag();
+            rewardTag.putInt("Amount", reward.amount());
+            rewardTag.putLong("ReleaseTick", reward.releaseTick());
+            rewardTag.putLong("SoundPos", reward.soundPos().asLong());
+            pendingXpList.add(rewardTag);
+        }
+        tag.put("PendingRestaurantXp", pendingXpList);
+
         ListTag memberList = new ListTag();
         for (Map.Entry<UUID, String> entry : members.entrySet()) {
             CompoundTag member = new CompoundTag();
@@ -504,6 +596,19 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
         menuBoardPos = tag.contains("MenuBoardPos") ? BlockPos.of(tag.getLong("MenuBoardPos")) : null;
         openSignPos = tag.contains("OpenSignPos") ? BlockPos.of(tag.getLong("OpenSignPos")) : null;
 
+        pendingXpRewards.clear();
+        ListTag pendingXpList = tag.getList("PendingRestaurantXp", Tag.TAG_COMPOUND);
+        for (int i = 0; i < pendingXpList.size(); i++) {
+            CompoundTag rewardTag = pendingXpList.getCompound(i);
+            int amount = Math.max(0, rewardTag.getInt("Amount"));
+            if (amount <= 0) continue;
+            long releaseTick = rewardTag.getLong("ReleaseTick");
+            BlockPos soundPos = rewardTag.contains("SoundPos")
+                    ? BlockPos.of(rewardTag.getLong("SoundPos"))
+                    : worldPosition;
+            pendingXpRewards.add(new PendingXpReward(amount, releaseTick, soundPos));
+        }
+
         members.clear();
         ListTag memberList = tag.getList("Members", Tag.TAG_COMPOUND);
         for (int i = 0; i < memberList.size(); i++) {
@@ -512,4 +617,7 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
         }
         if (ownerId != null) members.putIfAbsent(ownerId, ownerName);
     }
+
+    private record PendingXpReward(int amount, long releaseTick, BlockPos soundPos) {}
+
 }

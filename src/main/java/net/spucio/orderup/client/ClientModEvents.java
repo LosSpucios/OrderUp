@@ -9,6 +9,7 @@ import net.spucio.orderup.ModContent;
 import net.spucio.orderup.ModParticles;
 import net.spucio.orderup.OrderUp;
 import net.spucio.orderup.client.particle.CoinParticle;
+import net.spucio.orderup.client.particle.RestaurantXpParticle;
 
 @EventBusSubscriber(modid = OrderUp.MOD_ID, value = Dist.CLIENT)
 public final class ClientModEvents {
@@ -17,6 +18,7 @@ public final class ClientModEvents {
     @SubscribeEvent
     public static void registerParticleProviders(RegisterParticleProvidersEvent event) {
         event.registerSpriteSet(ModParticles.COIN.get(), CoinParticle.Provider::new);
+        event.registerSpriteSet(ModParticles.RESTAURANT_XP.get(), RestaurantXpParticle.Provider::new);
     }
 
     @SubscribeEvent

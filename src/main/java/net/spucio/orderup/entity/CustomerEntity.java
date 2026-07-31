@@ -389,7 +389,11 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
 
         if (getMood() == CustomerMood.HAPPY) {
             heart.addMoney(orderPrice);
-            heart.addRestaurantXp(10 + Math.max(1, orderPrice / 2));
+            heart.spawnRestaurantXpReward(
+                    level,
+                    position().add(0.0D, 0.12D, 0.0D),
+                    10 + Math.max(1, orderPrice / 2)
+            );
             level.sendParticles(
                     ParticleTypes.HAPPY_VILLAGER,
                     getX(), getY() + 1.4D, getZ(),
