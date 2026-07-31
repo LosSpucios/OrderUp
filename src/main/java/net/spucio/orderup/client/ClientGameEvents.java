@@ -209,9 +209,17 @@ public final class ClientGameEvents {
         buffers.endBatch(RenderType.lines());
 
         if (ClientRestaurantState.borderOwner()) {
-            double labelY = Math.max(minY + 2.0D, Math.min(maxY - 2.0D, minecraft.player.getY() + 2.1D));
+            /*
+             * Expansion labels are anchored to the Restaurant Heart rather than
+             * the viewer. This keeps every label at a stable world position while
+             * the player walks, jumps or flies around the claimed chunks.
+             */
+            double labelY = Math.max(
+                    minY + 3.0D,
+                    Math.min(maxY - 3.0D, ClientRestaurantState.borderHeart().getY() + 6.0D)
+            );
             for (ClientRestaurantState.BoundaryEdge edge : ClientRestaurantState.borderEdges()) {
-                renderExpansionLabel(event, edge, labelY, camera, poseStack, buffers, minecraft);
+                renderExpansionLabel(edge, labelY, camera, poseStack, buffers, minecraft);
             }
             buffers.endBatch();
         }
@@ -261,7 +269,6 @@ public final class ClientGameEvents {
     }
 
     private static void renderExpansionLabel(
-            RenderLevelStageEvent event,
             ClientRestaurantState.BoundaryEdge edge,
             double y,
             Vec3 camera,
@@ -272,22 +279,32 @@ public final class ClientGameEvents {
         ChunkPos chunk = new ChunkPos(edge.chunkX(), edge.chunkZ());
         double x;
         double z;
+        float fixedYaw;
+
+        /*
+         * Each label is permanently aligned with its boundary wall and faces the
+         * restaurant interior. It no longer billboards toward the camera.
+         */
         switch (edge.direction()) {
             case EAST -> {
-                x = chunk.getMaxBlockX() + 1.04D;
+                x = chunk.getMaxBlockX() + 1.02D;
                 z = chunk.getMinBlockZ() + 8.0D;
+                fixedYaw = 90.0F;
             }
             case WEST -> {
-                x = chunk.getMinBlockX() - 0.04D;
+                x = chunk.getMinBlockX() - 0.02D;
                 z = chunk.getMinBlockZ() + 8.0D;
+                fixedYaw = -90.0F;
             }
             case SOUTH -> {
                 x = chunk.getMinBlockX() + 8.0D;
-                z = chunk.getMaxBlockZ() + 1.04D;
+                z = chunk.getMaxBlockZ() + 1.02D;
+                fixedYaw = 0.0F;
             }
             case NORTH -> {
                 x = chunk.getMinBlockX() + 8.0D;
-                z = chunk.getMinBlockZ() - 0.04D;
+                z = chunk.getMinBlockZ() - 0.02D;
+                fixedYaw = 180.0F;
             }
             default -> {
                 return;
@@ -298,18 +315,20 @@ public final class ClientGameEvents {
         Font font = minecraft.font;
         poseStack.pushPose();
         poseStack.translate(x - camera.x, y - camera.y, z - camera.z);
-        poseStack.mulPose(Axis.YP.rotationDegrees(-event.getCamera().getYRot()));
-        poseStack.scale(-0.025F, -0.025F, 0.025F);
+        poseStack.mulPose(Axis.YP.rotationDegrees(fixedYaw));
+
+        // Roughly 3.5–5 blocks wide for the usual price/requirement labels.
+        poseStack.scale(-0.15F, -0.15F, 0.15F);
         font.drawInBatch(
                 text,
                 -font.width(text) / 2.0F,
-                0.0F,
+                -font.lineHeight / 2.0F,
                 ClientRestaurantState.expansionLabelColor(),
                 true,
                 poseStack.last().pose(),
                 buffers,
                 Font.DisplayMode.SEE_THROUGH,
-                0x88000000,
+                0,
                 LightTexture.FULL_BRIGHT
         );
         poseStack.popPose();
