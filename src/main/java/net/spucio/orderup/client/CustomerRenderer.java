@@ -27,6 +27,7 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
 
     private static final float BILLBOARD_SCALE = 0.025F;
     private static final float ITEM_SCALE = 14.0F;
+    private static final float ITEM_DEPTH_SCALE = 0.35F;
 
     public CustomerRenderer(EntityRendererProvider.Context context) {
         super(context, new VillagerModel<>(context.bakeLayer(ModelLayers.VILLAGER)), 0.5F);
@@ -239,7 +240,8 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
          * handedness for the item renderer.
          */
         poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
-        poseStack.scale(ITEM_SCALE, ITEM_SCALE, ITEM_SCALE);
+        // Flatten the model depth so requested items read like clean 2D menu icons.
+        poseStack.scale(ITEM_SCALE, ITEM_SCALE, ITEM_DEPTH_SCALE);
         Minecraft.getInstance().getItemRenderer().renderStatic(
                 stack,
                 ItemDisplayContext.GUI,
@@ -276,8 +278,8 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
          * sink into thicker item models.
          */
         float xOffset = 2.0F;
-        float yOffset = entity.isOrderFailed() ? 2.5F : -0.75F;
-        float zOffset = entity.isOrderFailed() ? -0.38F : -0.30F;
+        float yOffset = entity.isOrderFailed() ? 1.5F : -3.0F;
+        float zOffset = entity.isOrderFailed() ? -0.42F : -0.34F;
         poseStack.translate(x + xOffset, y + yOffset, zOffset);
         poseStack.scale(1.65F, 1.65F, 1.65F);
         font.drawInBatch(
