@@ -151,7 +151,7 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
 
     public long priceForNextChunk() {
         int requiredLevel = requiredLevelForNextChunk();
-        return requiredLevel == 1 ? 100L : (long) (requiredLevel - 1) * 500L;
+        return (long) requiredLevel * 100L;
     }
 
     public boolean purchaseExpansionChunk(ServerPlayer player, int targetChunkX, int targetChunkZ) {

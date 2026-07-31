@@ -95,10 +95,10 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
                 -font.width(text) / 2.0F,
                 0.0F,
                 0xFF3A2A1E,
-                true,
+                false,
                 poseStack.last().pose(),
                 buffer,
-                Font.DisplayMode.SEE_THROUGH,
+                Font.DisplayMode.NORMAL,
                 0,
                 packedLight
         );
@@ -285,10 +285,10 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
                 -font.width(mark) / 2.0F,
                 -font.lineHeight / 2.0F,
                 color,
-                true,
+                false,
                 poseStack.last().pose(),
                 buffer,
-                Font.DisplayMode.SEE_THROUGH,
+                Font.DisplayMode.NORMAL,
                 0,
                 packedLight
         );
@@ -320,10 +320,10 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
                 -font.width(mark) / 2.0F,
                 -font.lineHeight / 2.0F,
                 0xFFFFFFFF,
-                true,
+                false,
                 poseStack.last().pose(),
                 buffer,
-                Font.DisplayMode.SEE_THROUGH,
+                Font.DisplayMode.NORMAL,
                 0,
                 packedLight
         );

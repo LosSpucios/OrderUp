@@ -233,7 +233,7 @@ public final class ClientRestaurantState {
 
     public static long nextChunkPrice() {
         int requiredLevel = requiredLevelForNextChunk();
-        return requiredLevel == 1 ? 100L : (long) (requiredLevel - 1) * 500L;
+        return (long) requiredLevel * 100L;
     }
 
     public static String expansionLabel() {

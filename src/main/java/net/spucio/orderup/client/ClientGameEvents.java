@@ -1,11 +1,11 @@
 package net.spucio.orderup.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
@@ -13,7 +13,6 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -28,13 +27,15 @@ import net.spucio.orderup.ModContent;
 import net.spucio.orderup.OrderUp;
 import net.spucio.orderup.network.OrderUpNetworking;
 
+import java.util.HashMap;
+import java.util.Map;
+
 @EventBusSubscriber(modid = OrderUp.MOD_ID, value = Dist.CLIENT)
 public final class ClientGameEvents {
     private static final int HUD_PANEL_BACKGROUND = 0xAA2B2018;
     private static final int HUD_TEXT = 0xFFF3E2BF;
     private static final int HUD_RED = 0xFFFF5C52;
     private static final int HUD_GREEN = 0xFF69D06F;
-    private static final double BORDER_EPSILON = 0.002D;
 
     private ClientGameEvents() {}
 
@@ -202,10 +203,14 @@ public final class ClientGameEvents {
         var buffers = minecraft.renderBuffers().bufferSource();
         var lines = buffers.getBuffer(RenderType.lines());
 
-        for (ClientRestaurantState.BoundaryEdge edge : ClientRestaurantState.borderEdges()) {
-            AABB faceBox = boundaryFaceBox(edge, minY, maxY).move(-camera.x, -camera.y, -camera.z);
-            LevelRenderer.renderLineBox(poseStack, lines, faceBox, 1.0F, 1.0F, 1.0F, 0.92F);
-        }
+        renderBoundaryCornerLines(
+                ClientRestaurantState.borderEdges(),
+                minY,
+                maxY,
+                camera,
+                poseStack,
+                lines
+        );
         buffers.endBatch(RenderType.lines());
 
         if (ClientRestaurantState.borderOwner()) {
@@ -225,47 +230,82 @@ public final class ClientGameEvents {
         }
     }
 
-    private static AABB boundaryFaceBox(
-            ClientRestaurantState.BoundaryEdge edge,
+    private static final int CORNER_NORTH = 1;
+    private static final int CORNER_SOUTH = 1 << 1;
+    private static final int CORNER_EAST = 1 << 2;
+    private static final int CORNER_WEST = 1 << 3;
+
+    /**
+     * Draw only the true outside corners of the claimed-chunk shape. Straight
+     * chunk seams are ignored, and no horizontal top/bottom cap is emitted, so
+     * looking upward no longer reveals a rectangular "roof" over the area.
+     */
+    private static void renderBoundaryCornerLines(
+            Iterable<ClientRestaurantState.BoundaryEdge> edges,
             int minY,
-            int maxY
+            int maxY,
+            Vec3 camera,
+            PoseStack poseStack,
+            VertexConsumer lines
     ) {
-        ChunkPos chunk = new ChunkPos(edge.chunkX(), edge.chunkZ());
-        return switch (edge.direction()) {
-            case EAST -> new AABB(
-                    chunk.getMaxBlockX() + 1.0D - BORDER_EPSILON,
-                    minY,
-                    chunk.getMinBlockZ(),
-                    chunk.getMaxBlockX() + 1.0D + BORDER_EPSILON,
-                    maxY,
-                    chunk.getMaxBlockZ() + 1.0D
-            );
-            case WEST -> new AABB(
-                    chunk.getMinBlockX() - BORDER_EPSILON,
-                    minY,
-                    chunk.getMinBlockZ(),
-                    chunk.getMinBlockX() + BORDER_EPSILON,
-                    maxY,
-                    chunk.getMaxBlockZ() + 1.0D
-            );
-            case SOUTH -> new AABB(
-                    chunk.getMinBlockX(),
-                    minY,
-                    chunk.getMaxBlockZ() + 1.0D - BORDER_EPSILON,
-                    chunk.getMaxBlockX() + 1.0D,
-                    maxY,
-                    chunk.getMaxBlockZ() + 1.0D + BORDER_EPSILON
-            );
-            case NORTH -> new AABB(
-                    chunk.getMinBlockX(),
-                    minY,
-                    chunk.getMinBlockZ() - BORDER_EPSILON,
-                    chunk.getMaxBlockX() + 1.0D,
-                    maxY,
-                    chunk.getMinBlockZ() + BORDER_EPSILON
-            );
-            default -> throw new IllegalArgumentException("Vertical restaurant boundary");
-        };
+        Map<Long, Integer> cornerDirections = new HashMap<>();
+
+        for (ClientRestaurantState.BoundaryEdge edge : edges) {
+            ChunkPos chunk = new ChunkPos(edge.chunkX(), edge.chunkZ());
+            switch (edge.direction()) {
+                case EAST -> {
+                    int x = chunk.getMaxBlockX() + 1;
+                    addCornerDirection(cornerDirections, x, chunk.getMinBlockZ(), CORNER_SOUTH);
+                    addCornerDirection(cornerDirections, x, chunk.getMaxBlockZ() + 1, CORNER_NORTH);
+                }
+                case WEST -> {
+                    int x = chunk.getMinBlockX();
+                    addCornerDirection(cornerDirections, x, chunk.getMinBlockZ(), CORNER_SOUTH);
+                    addCornerDirection(cornerDirections, x, chunk.getMaxBlockZ() + 1, CORNER_NORTH);
+                }
+                case SOUTH -> {
+                    int z = chunk.getMaxBlockZ() + 1;
+                    addCornerDirection(cornerDirections, chunk.getMinBlockX(), z, CORNER_EAST);
+                    addCornerDirection(cornerDirections, chunk.getMaxBlockX() + 1, z, CORNER_WEST);
+                }
+                case NORTH -> {
+                    int z = chunk.getMinBlockZ();
+                    addCornerDirection(cornerDirections, chunk.getMinBlockX(), z, CORNER_EAST);
+                    addCornerDirection(cornerDirections, chunk.getMaxBlockX() + 1, z, CORNER_WEST);
+                }
+                default -> {
+                    // Restaurant boundaries are horizontal-only.
+                }
+            }
+        }
+
+        PoseStack.Pose pose = poseStack.last();
+        float renderedMinY = (float) (minY - camera.y);
+        float renderedMaxY = (float) (maxY - camera.y);
+
+        for (Map.Entry<Long, Integer> entry : cornerDirections.entrySet()) {
+            int directions = entry.getValue();
+            boolean straightNorthSouth = directions == (CORNER_NORTH | CORNER_SOUTH);
+            boolean straightEastWest = directions == (CORNER_EAST | CORNER_WEST);
+            if (straightNorthSouth || straightEastWest) continue;
+
+            int worldX = (int) (entry.getKey() >> 32);
+            int worldZ = (int) (long) entry.getKey();
+            float renderedX = (float) (worldX - camera.x);
+            float renderedZ = (float) (worldZ - camera.z);
+
+            lines.addVertex(pose, renderedX, renderedMinY, renderedZ)
+                    .setColor(1.0F, 1.0F, 1.0F, 0.95F)
+                    .setNormal(pose, 0.0F, 1.0F, 0.0F);
+            lines.addVertex(pose, renderedX, renderedMaxY, renderedZ)
+                    .setColor(1.0F, 1.0F, 1.0F, 0.95F)
+                    .setNormal(pose, 0.0F, 1.0F, 0.0F);
+        }
+    }
+
+    private static void addCornerDirection(Map<Long, Integer> corners, int x, int z, int direction) {
+        long key = ((long) x << 32) | (z & 0xFFFFFFFFL);
+        corners.merge(key, direction, (left, right) -> left | right);
     }
 
     private static void renderExpansionLabel(
@@ -324,10 +364,10 @@ public final class ClientGameEvents {
                 -font.width(text) / 2.0F,
                 -font.lineHeight / 2.0F,
                 ClientRestaurantState.expansionLabelColor(),
-                true,
+                false,
                 poseStack.last().pose(),
                 buffers,
-                Font.DisplayMode.SEE_THROUGH,
+                Font.DisplayMode.NORMAL,
                 0,
                 LightTexture.FULL_BRIGHT
         );
