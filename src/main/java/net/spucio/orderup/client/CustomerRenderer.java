@@ -7,6 +7,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.model.VillagerModel;
 import net.minecraft.client.model.geom.ModelLayers;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
@@ -327,7 +328,7 @@ public class CustomerRenderer extends MobRenderer<CustomerEntity, VillagerModel<
                 buffer,
                 Font.DisplayMode.NORMAL,
                 0,
-                packedLight
+                LightTexture.FULL_BRIGHT
         );
         poseStack.popPose();
     }

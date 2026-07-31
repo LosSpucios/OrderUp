@@ -195,7 +195,8 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
         nextCustomerSpawnTick = 0L;
         setChanged();
         syncHudNow(serverLevel);
-        OrderUpNetworking.sendHeartData(player, this);
+        // HeartDataPayload opens the Heart screen on the client, so do not send
+        // it for a boundary purchase. HUD and border data are enough here.
         OrderUpNetworking.sendBorderUpdate(player, this);
         player.displayClientMessage(Component.literal("Restaurant expanded for " + price + "$."), true);
         return true;
@@ -275,21 +276,12 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
 
     /**
      * Spawns the visual restaurant-XP orbs and delays the actual XP award until
-     * the particles finish flying. The target is the nearest crew member still
-     * standing in this restaurant; if none is available, the orbs fly into the
-     * Restaurant Heart instead.
+     * the particles finish flying into the Restaurant Heart.
      */
     public void spawnRestaurantXpReward(ServerLevel level, Vec3 origin, int amount) {
         if (amount <= 0) return;
 
-        ServerPlayer targetPlayer = level.players().stream()
-                .filter(player -> isMember(player.getUUID()) && contains(player))
-                .min(java.util.Comparator.comparingDouble(player -> player.distanceToSqr(origin)))
-                .orElse(null);
-
-        Vec3 target = targetPlayer != null
-                ? targetPlayer.position().add(0.0D, 1.0D, 0.0D)
-                : Vec3.atCenterOf(worldPosition).add(0.0D, 0.65D, 0.0D);
+        Vec3 target = Vec3.atCenterOf(worldPosition).add(0.0D, 0.65D, 0.0D);
 
         int orbCount = Math.max(5, Math.min(10, 4 + amount / 5));
         for (int i = 0; i < orbCount; i++) {
@@ -360,6 +352,16 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
         moneyHalfUnits = moneyHalfUnits > Long.MAX_VALUE - halfUnits
                 ? Long.MAX_VALUE
                 : moneyHalfUnits + halfUnits;
+        setChanged();
+        if (level instanceof ServerLevel serverLevel) {
+            syncHudNow(serverLevel);
+            syncOwnerBorderIfNearby(serverLevel);
+        }
+    }
+
+    /** Sets the exact restaurant balance in half-dollar units. */
+    public void setMoneyHalfUnits(long halfUnits) {
+        moneyHalfUnits = Math.max(0L, halfUnits);
         setChanged();
         if (level instanceof ServerLevel serverLevel) {
             syncHudNow(serverLevel);
