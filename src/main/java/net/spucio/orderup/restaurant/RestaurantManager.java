@@ -80,6 +80,23 @@ public final class RestaurantManager {
         }
     }
 
+    public static List<Long> getChunksClaimedByOtherRestaurants(
+            ServerLevel level,
+            RestaurantHeartBlockEntity ignoredHeart
+    ) {
+        synchronized (RestaurantManager.class) {
+            Map<BlockPos, RestaurantHeartBlockEntity> map = HEARTS.get(level);
+            if (map == null) return List.of();
+
+            java.util.LinkedHashSet<Long> claimed = new java.util.LinkedHashSet<>();
+            for (RestaurantHeartBlockEntity heart : map.values()) {
+                if (heart == ignoredHeart || heart.isRemoved()) continue;
+                claimed.addAll(heart.getClaimedChunkKeys());
+            }
+            return List.copyOf(claimed);
+        }
+    }
+
     public static synchronized void clear(ServerLevel level) {
         HEARTS.remove(level);
     }

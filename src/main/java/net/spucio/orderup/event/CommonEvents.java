@@ -36,6 +36,26 @@ public final class CommonEvents {
     }
 
     @SubscribeEvent
+    public static void onHeartPlaced(BlockEvent.EntityPlaceEvent event) {
+        if (!event.getPlacedBlock().is(ModContent.RESTAURANT_HEART.get())) return;
+        if (!(event.getLevel() instanceof ServerLevel level)) return;
+        if (!(level.getBlockEntity(event.getPos()) instanceof RestaurantHeartBlockEntity placedHeart)) return;
+
+        boolean overlapsAnotherRestaurant = placedHeart.getClaimedChunks().stream().anyMatch(chunk ->
+                RestaurantManager.isChunkClaimedByOther(level, placedHeart, chunk.x, chunk.z)
+        );
+        if (!overlapsAnotherRestaurant) return;
+
+        event.setCanceled(true);
+        if (event.getEntity() instanceof ServerPlayer player) {
+            player.displayClientMessage(
+                    Component.literal("This Restaurant Heart would overlap another restaurant."),
+                    true
+            );
+        }
+    }
+
+    @SubscribeEvent
     public static void onHeartBreak(BlockEvent.BreakEvent event) {
         if (!event.getState().is(ModContent.RESTAURANT_HEART.get())) return;
         if (!(event.getLevel() instanceof ServerLevel level)) return;

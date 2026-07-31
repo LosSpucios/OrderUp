@@ -4,10 +4,8 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
-import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
@@ -26,6 +24,7 @@ import net.spucio.orderup.blockentity.MenuBoardBlockEntity;
 import net.spucio.orderup.blockentity.OpenSignBlockEntity;
 import net.spucio.orderup.blockentity.RestaurantHeartBlockEntity;
 import net.spucio.orderup.entity.CustomerEntity;
+import net.spucio.orderup.item.RestaurantHeartItem;
 import net.spucio.orderup.item.RestaurantRestrictedBlockItem;
 
 public final class ModContent {
@@ -66,7 +65,10 @@ public final class ModContent {
             () -> new OpenSignBlock(BlockBehaviour.Properties.of().strength(1.0F).sound(SoundType.WOOD).noOcclusion())
     );
 
-    public static final DeferredItem<BlockItem> RESTAURANT_HEART_ITEM = ITEMS.registerSimpleBlockItem("restaurant_heart", RESTAURANT_HEART);
+    public static final DeferredItem<RestaurantHeartItem> RESTAURANT_HEART_ITEM = ITEMS.register(
+            "restaurant_heart",
+            () -> new RestaurantHeartItem(RESTAURANT_HEART.get(), new Item.Properties())
+    );
     public static final DeferredItem<RestaurantRestrictedBlockItem> TABLE_ITEM = ITEMS.register(
             "restaurant_table",
             () -> new RestaurantRestrictedBlockItem(TABLE.get(), new Item.Properties(), RestaurantRestrictedBlockItem.Kind.TABLE)

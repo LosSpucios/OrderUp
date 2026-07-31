@@ -32,7 +32,7 @@ public final class OrderUpNetworking {
     private OrderUpNetworking() {}
 
     public static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar("5");
+        PayloadRegistrar registrar = event.registrar("6");
 
         registrar.playToServer(AddMemberPayload.TYPE, AddMemberPayload.STREAM_CODEC, OrderUpNetworking::handleAddMember);
         registrar.playToServer(RemoveMemberPayload.TYPE, RemoveMemberPayload.STREAM_CODEC, OrderUpNetworking::handleRemoveMember);
@@ -48,6 +48,8 @@ public final class OrderUpNetworking {
                 (payload, context) -> context.enqueueWork(() -> ClientPayloadHandler.handleHud(payload)));
         registrar.playToClient(BorderDataPayload.TYPE, BorderDataPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> ClientPayloadHandler.handleBorderData(payload)));
+        registrar.playToClient(RestaurantRemovedPayload.TYPE, RestaurantRemovedPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> ClientPayloadHandler.handleRestaurantRemoved(payload)));
     }
 
     public static void sendHeartData(ServerPlayer player, RestaurantHeartBlockEntity heart) {
@@ -114,11 +116,19 @@ public final class OrderUpNetworking {
         PacketDistributor.sendToPlayer(player, new BorderDataPayload(
                 heart.getBlockPos(),
                 heart.getClaimedChunkKeys(),
+                RestaurantManager.getChunksClaimedByOtherRestaurants(player.serverLevel(), heart),
                 heart.getRestaurantLevel(),
                 heart.getMoney(),
                 heart.isOwner(player.getUUID()),
                 toggle
         ));
+    }
+
+    public static void sendRestaurantRemoved(ServerLevel level, BlockPos heartPos) {
+        RestaurantRemovedPayload payload = new RestaurantRemovedPayload(heartPos);
+        for (ServerPlayer player : level.players()) {
+            PacketDistributor.sendToPlayer(player, payload);
+        }
     }
 
     private static void handleAddMember(AddMemberPayload payload, IPayloadContext context) {
@@ -328,6 +338,7 @@ public final class OrderUpNetworking {
     public record BorderDataPayload(
             BlockPos heartPos,
             List<Long> claimedChunks,
+            List<Long> blockedChunks,
             int level,
             long money,
             boolean owner,
@@ -339,6 +350,8 @@ public final class OrderUpNetworking {
                     buf.writeBlockPos(value.heartPos);
                     buf.writeVarInt(value.claimedChunks.size());
                     for (long chunk : value.claimedChunks) buf.writeLong(chunk);
+                    buf.writeVarInt(value.blockedChunks.size());
+                    for (long chunk : value.blockedChunks) buf.writeLong(chunk);
                     buf.writeVarInt(value.level);
                     buf.writeLong(value.money);
                     buf.writeBoolean(value.owner);
@@ -349,15 +362,28 @@ public final class OrderUpNetworking {
                     int chunkCount = buf.readVarInt();
                     List<Long> chunks = new ArrayList<>(chunkCount);
                     for (int i = 0; i < chunkCount; i++) chunks.add(buf.readLong());
+                    int blockedCount = buf.readVarInt();
+                    List<Long> blocked = new ArrayList<>(blockedCount);
+                    for (int i = 0; i < blockedCount; i++) blocked.add(buf.readLong());
                     return new BorderDataPayload(
                             heartPos,
                             chunks,
+                            blocked,
                             buf.readVarInt(),
                             buf.readLong(),
                             buf.readBoolean(),
                             buf.readBoolean()
                     );
                 }
+        );
+        @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+
+    public record RestaurantRemovedPayload(BlockPos heartPos) implements CustomPacketPayload {
+        public static final Type<RestaurantRemovedPayload> TYPE = new Type<>(id("restaurant_removed"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, RestaurantRemovedPayload> STREAM_CODEC = StreamCodec.of(
+                (buf, value) -> buf.writeBlockPos(value.heartPos),
+                buf -> new RestaurantRemovedPayload(buf.readBlockPos())
         );
         @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }

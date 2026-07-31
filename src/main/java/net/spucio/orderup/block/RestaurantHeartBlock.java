@@ -5,6 +5,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
@@ -88,12 +89,9 @@ public class RestaurantHeartBlock extends BaseEntityBlock {
             heartStack.set(
                     DataComponents.LORE,
                     new ItemLore(List.of(
-                            Component.literal("Members: " + heart.getMembers().size())
-                                    .withStyle(ChatFormatting.GRAY),
-                            Component.literal("Money: " + MoneyFormatter.withDollarSuffix(heart.getMoney()))
-                                    .withStyle(ChatFormatting.GREEN),
-                            Component.literal("Level: " + heart.getRestaurantLevel())
-                                    .withStyle(ChatFormatting.GOLD)
+                            loreLine("Members: ", Integer.toString(heart.getMembers().size()), ChatFormatting.GRAY),
+                            loreLine("Money: ", MoneyFormatter.withDollarSuffix(heart.getMoney()), ChatFormatting.GREEN),
+                            loreLine("Level: ", Integer.toString(heart.getRestaurantLevel()), ChatFormatting.GOLD)
                     ))
             );
             popResource(level, pos, heartStack);
@@ -107,8 +105,17 @@ public class RestaurantHeartBlock extends BaseEntityBlock {
     protected void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean movedByPiston) {
         if (!state.is(newState.getBlock()) && level instanceof ServerLevel serverLevel) {
             RestaurantManager.removeCustomersForHeart(serverLevel, pos);
+            OrderUpNetworking.sendRestaurantRemoved(serverLevel, pos);
         }
         super.onRemove(state, level, pos, newState, movedByPiston);
+    }
+
+    private static MutableComponent loreLine(String label, String value, ChatFormatting valueColor) {
+        return Component.empty()
+                .append(Component.literal(label).withStyle(style ->
+                        style.withColor(ChatFormatting.GRAY).withItalic(false)))
+                .append(Component.literal(value).withStyle(style ->
+                        style.withColor(valueColor).withItalic(false)));
     }
 
     @Override

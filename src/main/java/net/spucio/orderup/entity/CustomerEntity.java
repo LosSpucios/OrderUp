@@ -767,12 +767,8 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
 
     public void onRestaurantRemoved() {
         if (!(level() instanceof ServerLevel serverLevel)) return;
-        if (getMood() == CustomerMood.NEUTRAL) {
-            detachFromRestaurant(serverLevel);
-        } else {
-            cleanupSeat(serverLevel);
-            discard();
-        }
+        cleanupSeat(serverLevel);
+        discard();
     }
 
     public boolean isLeaving() {

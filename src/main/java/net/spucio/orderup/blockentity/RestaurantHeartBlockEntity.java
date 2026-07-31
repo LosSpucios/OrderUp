@@ -453,6 +453,11 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
             if (isMember(player.getUUID()) && contains(player.blockPosition())) {
                 OrderUpNetworking.sendHud(player, this, chairStats, menuComplete, signStatus.present(), signStatus.open());
             }
+            if (isOwner(player.getUUID())
+                    && Math.abs(player.getX() - (worldPosition.getX() + 0.5D)) <= 48.0D
+                    && Math.abs(player.getZ() - (worldPosition.getZ() + 0.5D)) <= 48.0D) {
+                OrderUpNetworking.sendBorderUpdate(player, this);
+            }
         }
     }
 

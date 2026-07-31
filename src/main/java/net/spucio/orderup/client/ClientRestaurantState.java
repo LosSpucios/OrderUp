@@ -31,6 +31,7 @@ public final class ClientRestaurantState {
 
     private static BlockPos borderHeart;
     private static final LinkedHashSet<Long> borderChunks = new LinkedHashSet<>();
+    private static final LinkedHashSet<Long> borderBlockedChunks = new LinkedHashSet<>();
     private static int borderLevel = 1;
     private static long borderMoney;
     private static boolean borderOwner;
@@ -91,6 +92,7 @@ public final class ClientRestaurantState {
     public static void applyBorderData(
             BlockPos heartPos,
             List<Long> claimedChunks,
+            List<Long> blockedChunks,
             int restaurantLevel,
             long restaurantMoney,
             boolean owner,
@@ -107,6 +109,8 @@ public final class ClientRestaurantState {
         borderHeart = heartPos;
         borderChunks.clear();
         borderChunks.addAll(claimedChunks);
+        borderBlockedChunks.clear();
+        borderBlockedChunks.addAll(blockedChunks);
         borderLevel = Math.max(1, restaurantLevel);
         borderMoney = Math.max(0L, restaurantMoney);
         borderOwner = owner;
@@ -129,6 +133,7 @@ public final class ClientRestaurantState {
     private static void clearBorder() {
         borderHeart = null;
         borderChunks.clear();
+        borderBlockedChunks.clear();
         borderLevel = 1;
         borderMoney = 0L;
         borderOwner = false;
@@ -231,6 +236,8 @@ public final class ClientRestaurantState {
         }
 
         if (closestEdge == null) return null;
+        long targetKey = ChunkPos.asLong(closestEdge.targetChunkX(), closestEdge.targetChunkZ());
+        if (borderBlockedChunks.contains(targetKey)) return null;
         return new ExpansionTarget(
                 closestEdge.targetChunkX(),
                 closestEdge.targetChunkZ(),
@@ -251,19 +258,46 @@ public final class ClientRestaurantState {
         return (long) requiredLevel * 100L;
     }
 
-    public static String expansionLabel() {
+    public static boolean isExpansionBlocked(BoundaryEdge edge) {
+        return borderBlockedChunks.contains(ChunkPos.asLong(edge.targetChunkX(), edge.targetChunkZ()));
+    }
+
+    public static String expansionLabel(BoundaryEdge edge) {
+        if (isExpansionBlocked(edge)) return "X";
         int requiredLevel = requiredLevelForNextChunk();
         return borderLevel < requiredLevel
                 ? "req. level " + requiredLevel
                 : nextChunkPrice() + "$";
     }
 
-    public static int expansionLabelColor() {
+    public static int expansionLabelColor(BoundaryEdge edge) {
+        if (isExpansionBlocked(edge)) return 0xFFFF5555;
         int requiredLevel = requiredLevelForNextChunk();
         return borderLevel >= requiredLevel
                 && borderMoney >= MoneyFormatter.dollarsToHalfUnits(nextChunkPrice())
                 ? 0xFF55FF55
                 : 0xFFFF5555;
+    }
+
+    public static boolean isTrackingRestaurant(BlockPos heartPos) {
+        return heartPos != null && (heartPos.equals(hudHeart) || heartPos.equals(borderHeart));
+    }
+
+    public static void removeRestaurant(BlockPos heartPos) {
+        if (heartPos == null) return;
+        if (heartPos.equals(hudHeart)) {
+            hudHeart = null;
+            hudChunks.clear();
+            occupiedChairs = 0;
+            totalChairs = 0;
+            menuComplete = false;
+            openSignPresent = false;
+            restaurantOpen = false;
+            lastHudTick = Long.MIN_VALUE;
+        }
+        if (heartPos.equals(borderHeart)) {
+            clearBorder();
+        }
     }
 
     public static long money() { return money; }

@@ -432,7 +432,7 @@ public final class ClientGameEvents {
             }
         }
 
-        String text = ClientRestaurantState.expansionLabel();
+        String text = ClientRestaurantState.expansionLabel(edge);
         Font font = minecraft.font;
         poseStack.pushPose();
         poseStack.translate(x - camera.x, y - camera.y, z - camera.z);
@@ -444,7 +444,7 @@ public final class ClientGameEvents {
                 text,
                 -font.width(text) / 2.0F,
                 -font.lineHeight / 2.0F,
-                ClientRestaurantState.expansionLabelColor(),
+                ClientRestaurantState.expansionLabelColor(edge),
                 false,
                 poseStack.last().pose(),
                 buffers,

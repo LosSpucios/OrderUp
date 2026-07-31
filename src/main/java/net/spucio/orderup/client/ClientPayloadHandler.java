@@ -40,10 +40,23 @@ public final class ClientPayloadHandler {
         );
     }
 
+    public static void handleRestaurantRemoved(OrderUpNetworking.RestaurantRemovedPayload payload) {
+        Minecraft minecraft = Minecraft.getInstance();
+        boolean wasTracked = ClientRestaurantState.isTrackingRestaurant(payload.heartPos());
+        ClientRestaurantState.removeRestaurant(payload.heartPos());
+        if (minecraft.screen instanceof RestaurantHeartScreen screen
+                && screen.getHeartPos().equals(payload.heartPos())) {
+            minecraft.setScreen(null);
+        } else if (wasTracked && minecraft.screen instanceof MenuBoardScreen) {
+            minecraft.setScreen(null);
+        }
+    }
+
     public static void handleBorderData(OrderUpNetworking.BorderDataPayload payload) {
         ClientRestaurantState.applyBorderData(
                 payload.heartPos(),
                 payload.claimedChunks(),
+                payload.blockedChunks(),
                 payload.level(),
                 payload.money(),
                 payload.owner(),
