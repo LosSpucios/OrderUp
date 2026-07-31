@@ -163,11 +163,25 @@ public final class ClientRestaurantState {
     ) {
         if (!borderActive() || !borderOwner) return null;
 
+        int originChunkX = BlockPos.containing(origin).getX() >> 4;
+        int originChunkZ = BlockPos.containing(origin).getZ() >> 4;
+
+        // Expansion clicks are resolved only against the outer walls of the
+        // claimed chunk the owner is currently standing in. This prevents a ray
+        // aimed at a shared seam between two owned chunks from travelling through
+        // the second chunk and accidentally selecting its far exterior wall.
+        if (!borderChunks.contains(ChunkPos.asLong(originChunkX, originChunkZ))) {
+            return null;
+        }
+
         BoundaryEdge closestEdge = null;
         double closestDistance = Double.MAX_VALUE;
         final double epsilon = 0.001D;
 
         for (BoundaryEdge edge : borderEdges()) {
+            if (edge.chunkX() != originChunkX || edge.chunkZ() != originChunkZ) {
+                continue;
+            }
             ChunkPos chunk = new ChunkPos(edge.chunkX(), edge.chunkZ());
             double distance;
             double hitX;

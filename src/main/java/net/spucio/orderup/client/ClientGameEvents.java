@@ -202,17 +202,17 @@ public final class ClientGameEvents {
         int maxY = minecraft.level.getMaxBuildHeight();
         PoseStack poseStack = event.getPoseStack();
         var buffers = minecraft.renderBuffers().bufferSource();
-        var lines = buffers.getBuffer(RenderType.lines());
+        var beams = buffers.getBuffer(RenderType.debugQuads());
 
-        renderBoundaryCornerLines(
+        renderBoundaryCornerBeams(
                 ClientRestaurantState.borderEdges(),
                 minY,
                 maxY,
                 camera,
                 poseStack,
-                lines
+                beams
         );
-        buffers.endBatch(RenderType.lines());
+        buffers.endBatch(RenderType.debugQuads());
 
         if (ClientRestaurantState.borderOwner()) {
             /*
@@ -241,13 +241,15 @@ public final class ClientGameEvents {
      * chunk seams are ignored, and no horizontal top/bottom cap is emitted, so
      * looking upward no longer reveals a rectangular "roof" over the area.
      */
-    private static void renderBoundaryCornerLines(
+    private static final float CORNER_BEAM_HALF_WIDTH = 0.055F;
+
+    private static void renderBoundaryCornerBeams(
             Iterable<ClientRestaurantState.BoundaryEdge> edges,
             int minY,
             int maxY,
             Vec3 camera,
             PoseStack poseStack,
-            VertexConsumer lines
+            VertexConsumer beams
     ) {
         Map<Long, Integer> cornerDirections = new HashMap<>();
 
@@ -295,13 +297,91 @@ public final class ClientGameEvents {
             float renderedX = (float) (worldX - camera.x);
             float renderedZ = (float) (worldZ - camera.z);
 
-            lines.addVertex(pose, renderedX, renderedMinY, renderedZ)
-                    .setColor(1.0F, 1.0F, 1.0F, 0.95F)
-                    .setNormal(pose, 0.0F, 1.0F, 0.0F);
-            lines.addVertex(pose, renderedX, renderedMaxY, renderedZ)
-                    .setColor(1.0F, 1.0F, 1.0F, 0.95F)
-                    .setNormal(pose, 0.0F, 1.0F, 0.0F);
+            renderVerticalCornerBeam(
+                    beams,
+                    pose,
+                    renderedX,
+                    renderedMinY,
+                    renderedMaxY,
+                    renderedZ
+            );
         }
+    }
+
+    /**
+     * Render a narrow four-sided world-space beam instead of a GL line. A line's
+     * screen-space width changes dramatically with the camera angle, while this
+     * open-ended prism keeps the same physical thickness from every direction.
+     * Top and bottom faces are intentionally omitted, so looking up never shows
+     * a bright cap at the world-height limit.
+     */
+    private static void renderVerticalCornerBeam(
+            VertexConsumer consumer,
+            PoseStack.Pose pose,
+            float centerX,
+            float minY,
+            float maxY,
+            float centerZ
+    ) {
+        float minX = centerX - CORNER_BEAM_HALF_WIDTH;
+        float maxX = centerX + CORNER_BEAM_HALF_WIDTH;
+        float minZ = centerZ - CORNER_BEAM_HALF_WIDTH;
+        float maxZ = centerZ + CORNER_BEAM_HALF_WIDTH;
+
+        addBeamQuad(consumer, pose,
+                minX, minY, minZ,
+                minX, maxY, minZ,
+                minX, maxY, maxZ,
+                minX, minY, maxZ,
+                -1.0F, 0.0F, 0.0F);
+        addBeamQuad(consumer, pose,
+                maxX, minY, maxZ,
+                maxX, maxY, maxZ,
+                maxX, maxY, minZ,
+                maxX, minY, minZ,
+                1.0F, 0.0F, 0.0F);
+        addBeamQuad(consumer, pose,
+                maxX, minY, minZ,
+                maxX, maxY, minZ,
+                minX, maxY, minZ,
+                minX, minY, minZ,
+                0.0F, 0.0F, -1.0F);
+        addBeamQuad(consumer, pose,
+                minX, minY, maxZ,
+                minX, maxY, maxZ,
+                maxX, maxY, maxZ,
+                maxX, minY, maxZ,
+                0.0F, 0.0F, 1.0F);
+    }
+
+    private static void addBeamQuad(
+            VertexConsumer consumer,
+            PoseStack.Pose pose,
+            float x1, float y1, float z1,
+            float x2, float y2, float z2,
+            float x3, float y3, float z3,
+            float x4, float y4, float z4,
+            float normalX, float normalY, float normalZ
+    ) {
+        addBeamVertex(consumer, pose, x1, y1, z1, normalX, normalY, normalZ);
+        addBeamVertex(consumer, pose, x2, y2, z2, normalX, normalY, normalZ);
+        addBeamVertex(consumer, pose, x3, y3, z3, normalX, normalY, normalZ);
+        addBeamVertex(consumer, pose, x4, y4, z4, normalX, normalY, normalZ);
+    }
+
+    private static void addBeamVertex(
+            VertexConsumer consumer,
+            PoseStack.Pose pose,
+            float x,
+            float y,
+            float z,
+            float normalX,
+            float normalY,
+            float normalZ
+    ) {
+        consumer.addVertex(pose, x, y, z)
+                .setColor(255, 255, 255, 225)
+                .setNormal(pose, normalX, normalY, normalZ);
     }
 
     private static void addCornerDirection(Map<Long, Integer> corners, int x, int z, int direction) {
