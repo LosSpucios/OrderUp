@@ -21,5 +21,6 @@
   "screen.orderup.food": "Food",
   "screen.orderup.drinks": "Drinks",
   "screen.orderup.inventory_hint": "Select a menu slot, then click an item below. Right-click a slot to clear it.",
-  "message.orderup.angry_recovery": "Recovered $%s from the angry customer!"
+  "message.orderup.angry_recovery": "Recovered $%s from the angry customer!",
+  "message.orderup.only_food_or_drink": "Customers only accept food or drinks."
 }

@@ -5,6 +5,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.Vec3;
+import net.spucio.orderup.util.MoneyFormatter;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -245,7 +246,8 @@ public final class ClientRestaurantState {
 
     public static int expansionLabelColor() {
         int requiredLevel = requiredLevelForNextChunk();
-        return borderLevel >= requiredLevel && borderMoney >= nextChunkPrice()
+        return borderLevel >= requiredLevel
+                && borderMoney >= MoneyFormatter.dollarsToHalfUnits(nextChunkPrice())
                 ? 0xFF55FF55
                 : 0xFFFF5555;
     }

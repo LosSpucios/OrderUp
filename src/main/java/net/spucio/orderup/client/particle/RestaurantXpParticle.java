@@ -17,9 +17,9 @@ import net.minecraft.util.Mth;
  */
 public final class RestaurantXpParticle extends TextureSheetParticle {
     private static final int[] PALETTE = {
-            0xFFFFFF,
-            0xFFD6E7,
-            0xFFDFFF
+            0xFFE100,
+            0xFFFFC400,
+            0xFFFFF000
     };
 
     private final SpriteSet sprites;

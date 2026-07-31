@@ -43,6 +43,7 @@ import net.spucio.orderup.block.ChairBlock;
 import net.spucio.orderup.blockentity.MenuBoardBlockEntity;
 import net.spucio.orderup.blockentity.RestaurantHeartBlockEntity;
 import net.spucio.orderup.restaurant.RestaurantManager;
+import net.spucio.orderup.util.MoneyFormatter;
 
 import java.util.Locale;
 import java.util.Optional;
@@ -548,6 +549,13 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
         ItemStack held = player.getItemInHand(hand);
         if (held.isEmpty()) return InteractionResult.PASS;
 
+        // Ignore tools, blocks and other unrelated items. Wrong food or drink can
+        // still upset the customer, but non-consumables cannot be handed over at all.
+        if (!MenuBoardBlockEntity.isFood(held) && !MenuBoardBlockEntity.isDrink(held)) {
+            player.displayClientMessage(Component.translatable("message.orderup.only_food_or_drink"), true);
+            return InteractionResult.FAIL;
+        }
+
         boolean matched = false;
         if (!entityData.get(DATA_FOOD_DONE)
                 && ItemStack.isSameItemSameComponents(held, entityData.get(DATA_FOOD))) {
@@ -726,8 +734,10 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
                     : RestaurantManager.get(serverLevel, heartPos).orElse(null);
 
             if (heart != null && heart.isMember(player.getUUID())) {
-                int recovered = Math.max(1, orderPrice / 2);
-                heart.addMoney(recovered);
+                // Money is stored in half-dollar units. One half-unit per full
+                // order dollar is exactly 50%, so a $1 order correctly yields $0.5.
+                long recoveredHalfUnits = Math.max(1L, orderPrice);
+                heart.addMoneyHalfUnits(recoveredHalfUnits);
                 angryRewardClaimed = true;
                 serverLevel.sendParticles(
                         ModParticles.COIN.get(),
@@ -735,7 +745,7 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
                         14, 0.30D, 0.35D, 0.30D, 0.12D
                 );
                 serverLevel.playSound(null, blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.PLAYERS, 0.8F, 1.25F);
-                player.displayClientMessage(Component.translatable("message.orderup.angry_recovery", recovered), true);
+                player.displayClientMessage(Component.translatable("message.orderup.angry_recovery", MoneyFormatter.formatHalfUnits(recoveredHalfUnits)), true);
             }
         }
         return false;

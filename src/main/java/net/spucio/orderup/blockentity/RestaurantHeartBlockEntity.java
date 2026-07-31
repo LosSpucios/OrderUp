@@ -24,6 +24,7 @@ import net.spucio.orderup.block.OpenSignBlock;
 import net.spucio.orderup.entity.CustomerEntity;
 import net.spucio.orderup.network.OrderUpNetworking;
 import net.spucio.orderup.restaurant.RestaurantManager;
+import net.spucio.orderup.util.MoneyFormatter;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -41,7 +42,8 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
     private final LinkedHashMap<UUID, String> members = new LinkedHashMap<>();
     private int restaurantLevel = 1;
     private int restaurantXp;
-    private long money;
+    /** Restaurant balance stored in half-dollar units: 1 = $0.5. */
+    private long moneyHalfUnits;
     private boolean open;
     private BlockPos menuBoardPos;
     private BlockPos openSignPos;
@@ -86,7 +88,7 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
         members.put(ownerId, ownerName);
         restaurantName = ownerName + "'s Restaurant";
         restaurantLevel = 1;
-        money = 100L;
+        moneyHalfUnits = MoneyFormatter.dollarsToHalfUnits(100L);
         ensureInitialClaim();
         setChanged();
         if (level instanceof ServerLevel serverLevel) syncHudNow(serverLevel);
@@ -182,12 +184,13 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
             player.displayClientMessage(Component.literal("Requires restaurant level " + requiredLevel + "."), true);
             return false;
         }
-        if (money < price) {
+        long priceHalfUnits = MoneyFormatter.dollarsToHalfUnits(price);
+        if (moneyHalfUnits < priceHalfUnits) {
             player.displayClientMessage(Component.literal("You need " + price + "$ restaurant money."), true);
             return false;
         }
 
-        money -= price;
+        moneyHalfUnits -= priceHalfUnits;
         claimedChunks.add(targetKey);
         nextCustomerSpawnTick = 0L;
         setChanged();
@@ -346,8 +349,17 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
         setChanged();
     }
 
-    public void addMoney(long amount) {
-        money = Math.max(0, money + amount);
+    /** Adds a whole-dollar reward, for example the full value of a happy order. */
+    public void addMoney(long wholeDollars) {
+        addMoneyHalfUnits(MoneyFormatter.dollarsToHalfUnits(wholeDollars));
+    }
+
+    /** Adds money expressed in half-dollar units. One unit equals $0.5. */
+    public void addMoneyHalfUnits(long halfUnits) {
+        if (halfUnits <= 0L) return;
+        moneyHalfUnits = moneyHalfUnits > Long.MAX_VALUE - halfUnits
+                ? Long.MAX_VALUE
+                : moneyHalfUnits + halfUnits;
         setChanged();
         if (level instanceof ServerLevel serverLevel) {
             syncHudNow(serverLevel);
@@ -714,7 +726,8 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
     public Map<UUID, String> getMembers() { return Collections.unmodifiableMap(new LinkedHashMap<>(members)); }
     public int getRestaurantLevel() { return restaurantLevel; }
     public int getRestaurantXp() { return restaurantXp; }
-    public long getMoney() { return money; }
+    /** Returns the restaurant balance in half-dollar units. */
+    public long getMoney() { return moneyHalfUnits; }
     public boolean isOpen() { return open; }
     public BlockPos getMenuBoardPos() { return menuBoardPos; }
     public BlockPos getOpenSignPos() { return openSignPos; }
@@ -727,7 +740,9 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
         tag.putString("OwnerName", ownerName);
         tag.putInt("RestaurantLevel", restaurantLevel);
         tag.putInt("RestaurantXp", restaurantXp);
-        tag.putLong("Money", money);
+        tag.putLong("MoneyHalfUnits", moneyHalfUnits);
+        // Legacy mirror for older builds; fractional halves are intentionally truncated there.
+        tag.putLong("Money", moneyHalfUnits / 2L);
         tag.putBoolean("Open", open);
         if (menuBoardPos != null) tag.putLong("MenuBoardPos", menuBoardPos.asLong());
         if (openSignPos != null) tag.putLong("OpenSignPos", openSignPos.asLong());
@@ -763,7 +778,9 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
         ownerName = tag.getString("OwnerName");
         restaurantLevel = Math.max(1, tag.getInt("RestaurantLevel"));
         restaurantXp = Math.max(0, tag.getInt("RestaurantXp"));
-        money = Math.max(0L, tag.getLong("Money"));
+        moneyHalfUnits = tag.contains("MoneyHalfUnits", Tag.TAG_LONG)
+                ? Math.max(0L, tag.getLong("MoneyHalfUnits"))
+                : MoneyFormatter.dollarsToHalfUnits(Math.max(0L, tag.getLong("Money")));
         open = tag.contains("Open") && tag.getBoolean("Open");
         nextCustomerSpawnTick = 0L;
         menuBoardPos = tag.contains("MenuBoardPos") ? BlockPos.of(tag.getLong("MenuBoardPos")) : null;

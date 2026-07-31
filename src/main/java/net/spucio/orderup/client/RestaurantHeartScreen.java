@@ -12,6 +12,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.spucio.orderup.network.OrderUpNetworking;
+import net.spucio.orderup.util.MoneyFormatter;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -225,7 +226,7 @@ public class RestaurantHeartScreen extends Screen {
     private void renderCrew(GuiGraphics graphics, int left, int top) {
         graphics.drawString(font, Component.literal("Crew"), left + 27, top + 101, 0xFF4A2D18, false);
 
-        String moneyText = "$" + data.money();
+        String moneyText = MoneyFormatter.withDollarPrefix(data.money());
         graphics.drawString(
                 font,
                 moneyText,

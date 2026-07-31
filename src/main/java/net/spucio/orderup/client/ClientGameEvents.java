@@ -26,6 +26,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import net.spucio.orderup.ModContent;
 import net.spucio.orderup.OrderUp;
 import net.spucio.orderup.network.OrderUpNetworking;
+import net.spucio.orderup.util.MoneyFormatter;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -91,7 +92,7 @@ public final class ClientGameEvents {
         graphics.fill(width / 2 - 132, height - 48, width / 2 - 64, height - 28, HUD_PANEL_BACKGROUND);
         graphics.drawString(
                 minecraft.font,
-                "$" + ClientRestaurantState.money(),
+                MoneyFormatter.withDollarPrefix(ClientRestaurantState.money()),
                 width / 2 - 124,
                 height - 42,
                 0xFF7EE081,
