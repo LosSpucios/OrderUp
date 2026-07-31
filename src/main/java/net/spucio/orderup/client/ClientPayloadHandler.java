@@ -35,11 +35,19 @@ public final class ClientPayloadHandler {
                 payload.totalChairs(),
                 payload.menuComplete(),
                 payload.openSignPresent(),
-                payload.restaurantOpen()
+                payload.restaurantOpen(),
+                payload.claimedChunks()
         );
     }
 
-    public static void handleBorderToggle(OrderUpNetworking.BorderTogglePayload payload) {
-        ClientRestaurantState.toggleBorder(payload.heartPos(), payload.radius());
+    public static void handleBorderData(OrderUpNetworking.BorderDataPayload payload) {
+        ClientRestaurantState.applyBorderData(
+                payload.heartPos(),
+                payload.claimedChunks(),
+                payload.level(),
+                payload.money(),
+                payload.owner(),
+                payload.toggle()
+        );
     }
 }

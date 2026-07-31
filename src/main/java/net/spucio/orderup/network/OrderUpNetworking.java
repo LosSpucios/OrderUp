@@ -32,12 +32,13 @@ public final class OrderUpNetworking {
     private OrderUpNetworking() {}
 
     public static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar("3");
+        PayloadRegistrar registrar = event.registrar("4");
 
         registrar.playToServer(AddMemberPayload.TYPE, AddMemberPayload.STREAM_CODEC, OrderUpNetworking::handleAddMember);
         registrar.playToServer(RemoveMemberPayload.TYPE, RemoveMemberPayload.STREAM_CODEC, OrderUpNetworking::handleRemoveMember);
         registrar.playToServer(RenameRestaurantPayload.TYPE, RenameRestaurantPayload.STREAM_CODEC, OrderUpNetworking::handleRenameRestaurant);
         registrar.playToServer(SetMenuSlotPayload.TYPE, SetMenuSlotPayload.STREAM_CODEC, OrderUpNetworking::handleSetMenuSlot);
+        registrar.playToServer(ExpandRestaurantPayload.TYPE, ExpandRestaurantPayload.STREAM_CODEC, OrderUpNetworking::handleExpandRestaurant);
 
         registrar.playToClient(HeartDataPayload.TYPE, HeartDataPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> ClientPayloadHandler.handleHeartData(payload)));
@@ -45,8 +46,8 @@ public final class OrderUpNetworking {
                 (payload, context) -> context.enqueueWork(() -> ClientPayloadHandler.handleMenuData(payload)));
         registrar.playToClient(HudPayload.TYPE, HudPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> ClientPayloadHandler.handleHud(payload)));
-        registrar.playToClient(BorderTogglePayload.TYPE, BorderTogglePayload.STREAM_CODEC,
-                (payload, context) -> context.enqueueWork(() -> ClientPayloadHandler.handleBorderToggle(payload)));
+        registrar.playToClient(BorderDataPayload.TYPE, BorderDataPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> ClientPayloadHandler.handleBorderData(payload)));
     }
 
     public static void sendHeartData(ServerPlayer player, RestaurantHeartBlockEntity heart) {
@@ -96,12 +97,28 @@ public final class OrderUpNetworking {
                 chairStats.total(),
                 menuComplete,
                 openSignPresent,
-                restaurantOpen
+                restaurantOpen,
+                heart.getClaimedChunkKeys()
         ));
     }
 
     public static void toggleBorder(ServerPlayer player, RestaurantHeartBlockEntity heart) {
-        PacketDistributor.sendToPlayer(player, new BorderTogglePayload(heart.getBlockPos(), heart.getRadius()));
+        sendBorderData(player, heart, true);
+    }
+
+    public static void sendBorderUpdate(ServerPlayer player, RestaurantHeartBlockEntity heart) {
+        sendBorderData(player, heart, false);
+    }
+
+    private static void sendBorderData(ServerPlayer player, RestaurantHeartBlockEntity heart, boolean toggle) {
+        PacketDistributor.sendToPlayer(player, new BorderDataPayload(
+                heart.getBlockPos(),
+                heart.getClaimedChunkKeys(),
+                heart.getRestaurantLevel(),
+                heart.getMoney(),
+                heart.isOwner(player.getUUID()),
+                toggle
+        ));
     }
 
     private static void handleAddMember(AddMemberPayload payload, IPayloadContext context) {
@@ -168,6 +185,15 @@ public final class OrderUpNetworking {
             if (menu.setGhostItem(payload.slot(), stack)) {
                 sendMenuData(player, menu);
             }
+        });
+    }
+
+    private static void handleExpandRestaurant(ExpandRestaurantPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer player)) return;
+            RestaurantHeartBlockEntity heart = RestaurantManager.get(player.serverLevel(), payload.heartPos()).orElse(null);
+            if (heart == null) return;
+            heart.purchaseExpansionChunk(player, payload.targetChunkX(), payload.targetChunkZ());
         });
     }
 
@@ -259,7 +285,8 @@ public final class OrderUpNetworking {
             int totalChairs,
             boolean menuComplete,
             boolean openSignPresent,
-            boolean restaurantOpen
+            boolean restaurantOpen,
+            List<Long> claimedChunks
     ) implements CustomPacketPayload {
         public static final Type<HudPayload> TYPE = new Type<>(id("hud"));
         public static final StreamCodec<RegistryFriendlyByteBuf, HudPayload> STREAM_CODEC = StreamCodec.of(
@@ -274,28 +301,80 @@ public final class OrderUpNetworking {
                     buf.writeBoolean(value.menuComplete);
                     buf.writeBoolean(value.openSignPresent);
                     buf.writeBoolean(value.restaurantOpen);
+                    buf.writeVarInt(value.claimedChunks.size());
+                    for (long chunk : value.claimedChunks) buf.writeLong(chunk);
                 },
-                buf -> new HudPayload(
-                        buf.readBlockPos(),
-                        buf.readLong(),
-                        buf.readVarInt(),
-                        buf.readVarInt(),
-                        buf.readVarInt(),
-                        buf.readVarInt(),
-                        buf.readVarInt(),
-                        buf.readBoolean(),
-                        buf.readBoolean(),
-                        buf.readBoolean()
-                )
+                buf -> {
+                    BlockPos heartPos = buf.readBlockPos();
+                    long money = buf.readLong();
+                    int xp = buf.readVarInt();
+                    int level = buf.readVarInt();
+                    int nextXp = buf.readVarInt();
+                    int occupied = buf.readVarInt();
+                    int total = buf.readVarInt();
+                    boolean menuComplete = buf.readBoolean();
+                    boolean signPresent = buf.readBoolean();
+                    boolean restaurantOpen = buf.readBoolean();
+                    int chunkCount = buf.readVarInt();
+                    List<Long> chunks = new ArrayList<>(chunkCount);
+                    for (int i = 0; i < chunkCount; i++) chunks.add(buf.readLong());
+                    return new HudPayload(heartPos, money, xp, level, nextXp, occupied, total,
+                            menuComplete, signPresent, restaurantOpen, chunks);
+                }
         );
         @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
-    public record BorderTogglePayload(BlockPos heartPos, int radius) implements CustomPacketPayload {
-        public static final Type<BorderTogglePayload> TYPE = new Type<>(id("border_toggle"));
-        public static final StreamCodec<RegistryFriendlyByteBuf, BorderTogglePayload> STREAM_CODEC = StreamCodec.of(
-                (buf, value) -> { buf.writeBlockPos(value.heartPos); buf.writeVarInt(value.radius); },
-                buf -> new BorderTogglePayload(buf.readBlockPos(), buf.readVarInt())
+    public record BorderDataPayload(
+            BlockPos heartPos,
+            List<Long> claimedChunks,
+            int level,
+            long money,
+            boolean owner,
+            boolean toggle
+    ) implements CustomPacketPayload {
+        public static final Type<BorderDataPayload> TYPE = new Type<>(id("border_data"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, BorderDataPayload> STREAM_CODEC = StreamCodec.of(
+                (buf, value) -> {
+                    buf.writeBlockPos(value.heartPos);
+                    buf.writeVarInt(value.claimedChunks.size());
+                    for (long chunk : value.claimedChunks) buf.writeLong(chunk);
+                    buf.writeVarInt(value.level);
+                    buf.writeLong(value.money);
+                    buf.writeBoolean(value.owner);
+                    buf.writeBoolean(value.toggle);
+                },
+                buf -> {
+                    BlockPos heartPos = buf.readBlockPos();
+                    int chunkCount = buf.readVarInt();
+                    List<Long> chunks = new ArrayList<>(chunkCount);
+                    for (int i = 0; i < chunkCount; i++) chunks.add(buf.readLong());
+                    return new BorderDataPayload(
+                            heartPos,
+                            chunks,
+                            buf.readVarInt(),
+                            buf.readLong(),
+                            buf.readBoolean(),
+                            buf.readBoolean()
+                    );
+                }
+        );
+        @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+
+    public record ExpandRestaurantPayload(
+            BlockPos heartPos,
+            int targetChunkX,
+            int targetChunkZ
+    ) implements CustomPacketPayload {
+        public static final Type<ExpandRestaurantPayload> TYPE = new Type<>(id("expand_restaurant"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, ExpandRestaurantPayload> STREAM_CODEC = StreamCodec.of(
+                (buf, value) -> {
+                    buf.writeBlockPos(value.heartPos);
+                    buf.writeVarInt(value.targetChunkX);
+                    buf.writeVarInt(value.targetChunkZ);
+                },
+                buf -> new ExpandRestaurantPayload(buf.readBlockPos(), buf.readVarInt(), buf.readVarInt())
         );
         @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }

@@ -634,17 +634,9 @@ public class CustomerEntity extends PathfinderMob implements VillagerDataHolder 
     }
 
     private void setLeavePath(ServerLevel level, RestaurantHeartBlockEntity heart) {
-        double dx = getX() - (heart.getBlockPos().getX() + 0.5D);
-        double dz = getZ() - (heart.getBlockPos().getZ() + 0.5D);
-        if (Math.abs(dx) + Math.abs(dz) < 0.1D) {
-            dx = random.nextBoolean() ? 1.0D : -1.0D;
-            dz = random.nextBoolean() ? 1.0D : -1.0D;
-        }
-
-        double length = Math.max(0.001D, Math.sqrt(dx * dx + dz * dz));
-        double distance = heart.getRadius() + 7.0D;
-        double targetX = heart.getBlockPos().getX() + 0.5D + dx / length * distance;
-        double targetZ = heart.getBlockPos().getZ() + 0.5D + dz / length * distance;
+        Vec3 exitTarget = heart.findNearestExitTarget(getX(), getZ(), 7.0D);
+        double targetX = exitTarget.x;
+        double targetZ = exitTarget.z;
         int targetY = level.getHeight(
                 Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
                 net.minecraft.util.Mth.floor(targetX),

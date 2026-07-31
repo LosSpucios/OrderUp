@@ -1,21 +1,32 @@
 package net.spucio.orderup.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.spucio.orderup.ModContent;
 import net.spucio.orderup.OrderUp;
+import net.spucio.orderup.network.OrderUpNetworking;
 
 @EventBusSubscriber(modid = OrderUp.MOD_ID, value = Dist.CLIENT)
 public final class ClientGameEvents {
@@ -23,6 +34,7 @@ public final class ClientGameEvents {
     private static final int HUD_TEXT = 0xFFF3E2BF;
     private static final int HUD_RED = 0xFFFF5C52;
     private static final int HUD_GREEN = 0xFF69D06F;
+    private static final double BORDER_EPSILON = 0.002D;
 
     private ClientGameEvents() {}
 
@@ -43,7 +55,6 @@ public final class ClientGameEvents {
         renderRestaurantStatus(graphics, minecraft, height);
     }
 
-
     private static void renderOpenClosedSign(GuiGraphics graphics, Minecraft minecraft, int width) {
         boolean open = ClientRestaurantState.openSignPresent() && ClientRestaurantState.restaurantOpen();
         String text = open ? "OPEN" : "CLOSED";
@@ -53,7 +64,6 @@ public final class ClientGameEvents {
         int x = (width - panelWidth) / 2;
         int y = 8;
 
-        // Warm wooden frame matching the restaurant GUIs.
         graphics.fill(x, y, x + panelWidth, y + panelHeight, 0xFF4C2E1E);
         graphics.fill(x + 2, y + 2, x + panelWidth - 2, y + panelHeight - 2, 0xFFC89B55);
         graphics.fill(
@@ -138,32 +148,170 @@ public final class ClientGameEvents {
     }
 
     @SubscribeEvent
-    public static void renderRestaurantBorder(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
-
-        BlockPos heart = ClientRestaurantState.borderHeart();
-        if (heart == null) return;
+    public static void handleBoundaryPurchaseInput(InputEvent.InteractionKeyMappingTriggered event) {
+        if (!event.isUseItem() || event.getHand() != InteractionHand.MAIN_HAND) return;
 
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.level == null) return;
+        if (minecraft.player == null || minecraft.level == null || minecraft.screen != null) return;
+        if (!minecraft.player.isShiftKeyDown() || !ClientRestaurantState.borderActive()
+                || !ClientRestaurantState.borderOwner()) return;
 
-        int radius = ClientRestaurantState.borderRadius();
-        int verticalHeight = 8;
+        HitResult vanillaHit = minecraft.hitResult;
+        if (vanillaHit instanceof BlockHitResult blockHit
+                && minecraft.level.getBlockState(blockHit.getBlockPos()).is(ModContent.RESTAURANT_HEART.get())) {
+            // Let Shift + RMB on the Heart keep toggling the preview.
+            return;
+        }
+
+        Vec3 eye = minecraft.player.getEyePosition(1.0F);
+        double maxDistance = 64.0D;
+        if (vanillaHit != null && vanillaHit.getType() != HitResult.Type.MISS) {
+            maxDistance = Math.min(maxDistance, eye.distanceTo(vanillaHit.getLocation()) + 0.15D);
+        }
+
+        ClientRestaurantState.ExpansionTarget target = ClientRestaurantState.findLookedAtExpansion(
+                eye,
+                minecraft.player.getViewVector(1.0F),
+                maxDistance,
+                minecraft.level.getMinBuildHeight(),
+                minecraft.level.getMaxBuildHeight()
+        );
+        if (target == null) return;
+
+        PacketDistributor.sendToServer(new OrderUpNetworking.ExpandRestaurantPayload(
+                ClientRestaurantState.borderHeart(),
+                target.chunkX(),
+                target.chunkZ()
+        ));
+        event.setCanceled(true);
+        event.setSwingHand(true);
+    }
+
+    @SubscribeEvent
+    public static void renderRestaurantBorder(RenderLevelStageEvent event) {
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) return;
+        if (!ClientRestaurantState.borderActive()) return;
+
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null || minecraft.player == null) return;
+
         Vec3 camera = event.getCamera().getPosition();
-
-        AABB box = new AABB(
-                heart.getX() - radius,
-                heart.getY() - 0.02D,
-                heart.getZ() - radius,
-                heart.getX() + radius + 1.0D,
-                heart.getY() + verticalHeight + 1.0D,
-                heart.getZ() + radius + 1.0D
-        ).move(-camera.x, -camera.y, -camera.z);
-
+        int minY = minecraft.level.getMinBuildHeight();
+        int maxY = minecraft.level.getMaxBuildHeight();
         PoseStack poseStack = event.getPoseStack();
         var buffers = minecraft.renderBuffers().bufferSource();
         var lines = buffers.getBuffer(RenderType.lines());
-        LevelRenderer.renderLineBox(poseStack, lines, box, 1.0F, 1.0F, 1.0F, 0.9F);
+
+        for (ClientRestaurantState.BoundaryEdge edge : ClientRestaurantState.borderEdges()) {
+            AABB faceBox = boundaryFaceBox(edge, minY, maxY).move(-camera.x, -camera.y, -camera.z);
+            LevelRenderer.renderLineBox(poseStack, lines, faceBox, 1.0F, 1.0F, 1.0F, 0.92F);
+        }
         buffers.endBatch(RenderType.lines());
+
+        if (ClientRestaurantState.borderOwner()) {
+            double labelY = Math.max(minY + 2.0D, Math.min(maxY - 2.0D, minecraft.player.getY() + 2.1D));
+            for (ClientRestaurantState.BoundaryEdge edge : ClientRestaurantState.borderEdges()) {
+                renderExpansionLabel(event, edge, labelY, camera, poseStack, buffers, minecraft);
+            }
+            buffers.endBatch();
+        }
+    }
+
+    private static AABB boundaryFaceBox(
+            ClientRestaurantState.BoundaryEdge edge,
+            int minY,
+            int maxY
+    ) {
+        ChunkPos chunk = new ChunkPos(edge.chunkX(), edge.chunkZ());
+        return switch (edge.direction()) {
+            case EAST -> new AABB(
+                    chunk.getMaxBlockX() + 1.0D - BORDER_EPSILON,
+                    minY,
+                    chunk.getMinBlockZ(),
+                    chunk.getMaxBlockX() + 1.0D + BORDER_EPSILON,
+                    maxY,
+                    chunk.getMaxBlockZ() + 1.0D
+            );
+            case WEST -> new AABB(
+                    chunk.getMinBlockX() - BORDER_EPSILON,
+                    minY,
+                    chunk.getMinBlockZ(),
+                    chunk.getMinBlockX() + BORDER_EPSILON,
+                    maxY,
+                    chunk.getMaxBlockZ() + 1.0D
+            );
+            case SOUTH -> new AABB(
+                    chunk.getMinBlockX(),
+                    minY,
+                    chunk.getMaxBlockZ() + 1.0D - BORDER_EPSILON,
+                    chunk.getMaxBlockX() + 1.0D,
+                    maxY,
+                    chunk.getMaxBlockZ() + 1.0D + BORDER_EPSILON
+            );
+            case NORTH -> new AABB(
+                    chunk.getMinBlockX(),
+                    minY,
+                    chunk.getMinBlockZ() - BORDER_EPSILON,
+                    chunk.getMaxBlockX() + 1.0D,
+                    maxY,
+                    chunk.getMinBlockZ() + BORDER_EPSILON
+            );
+            default -> throw new IllegalArgumentException("Vertical restaurant boundary");
+        };
+    }
+
+    private static void renderExpansionLabel(
+            RenderLevelStageEvent event,
+            ClientRestaurantState.BoundaryEdge edge,
+            double y,
+            Vec3 camera,
+            PoseStack poseStack,
+            MultiBufferSource.BufferSource buffers,
+            Minecraft minecraft
+    ) {
+        ChunkPos chunk = new ChunkPos(edge.chunkX(), edge.chunkZ());
+        double x;
+        double z;
+        switch (edge.direction()) {
+            case EAST -> {
+                x = chunk.getMaxBlockX() + 1.04D;
+                z = chunk.getMinBlockZ() + 8.0D;
+            }
+            case WEST -> {
+                x = chunk.getMinBlockX() - 0.04D;
+                z = chunk.getMinBlockZ() + 8.0D;
+            }
+            case SOUTH -> {
+                x = chunk.getMinBlockX() + 8.0D;
+                z = chunk.getMaxBlockZ() + 1.04D;
+            }
+            case NORTH -> {
+                x = chunk.getMinBlockX() + 8.0D;
+                z = chunk.getMinBlockZ() - 0.04D;
+            }
+            default -> {
+                return;
+            }
+        }
+
+        String text = ClientRestaurantState.expansionLabel();
+        Font font = minecraft.font;
+        poseStack.pushPose();
+        poseStack.translate(x - camera.x, y - camera.y, z - camera.z);
+        poseStack.mulPose(Axis.YP.rotationDegrees(-event.getCamera().getYRot()));
+        poseStack.scale(-0.025F, -0.025F, 0.025F);
+        font.drawInBatch(
+                text,
+                -font.width(text) / 2.0F,
+                0.0F,
+                ClientRestaurantState.expansionLabelColor(),
+                true,
+                poseStack.last().pose(),
+                buffers,
+                Font.DisplayMode.SEE_THROUGH,
+                0x88000000,
+                LightTexture.FULL_BRIGHT
+        );
+        poseStack.popPose();
     }
 }

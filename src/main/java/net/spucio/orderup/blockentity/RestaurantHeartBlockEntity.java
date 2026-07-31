@@ -12,6 +12,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -27,8 +28,10 @@ import net.spucio.orderup.restaurant.RestaurantManager;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public class RestaurantHeartBlockEntity extends BlockEntity {
@@ -43,15 +46,18 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
     private BlockPos menuBoardPos;
     private BlockPos openSignPos;
     private long nextCustomerSpawnTick;
+    private final LinkedHashSet<Long> claimedChunks = new LinkedHashSet<>();
     private final List<PendingXpReward> pendingXpRewards = new ArrayList<>();
 
     public RestaurantHeartBlockEntity(BlockPos pos, BlockState state) {
         super(ModContent.RESTAURANT_HEART_BE.get(), pos, state);
+        ensureInitialClaim();
     }
 
     @Override
     public void onLoad() {
         super.onLoad();
+        ensureInitialClaim();
         RestaurantManager.register(this);
     }
 
@@ -79,30 +85,171 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
         ownerName = player.getGameProfile().getName();
         members.put(ownerId, ownerName);
         restaurantName = ownerName + "'s Restaurant";
+        restaurantLevel = 1;
+        money = 100L;
+        ensureInitialClaim();
         setChanged();
+        if (level instanceof ServerLevel serverLevel) syncHudNow(serverLevel);
+    }
+
+    private void ensureInitialClaim() {
+        if (claimedChunks.isEmpty()) {
+            claimedChunks.add(ChunkPos.asLong(worldPosition));
+        }
     }
 
     public boolean contains(BlockPos pos) {
-        return containsPosition(pos.getX() + 0.5D, pos.getZ() + 0.5D);
+        return claimsChunk(pos.getX() >> 4, pos.getZ() >> 4);
     }
 
     public boolean containsPosition(double x, double z) {
-        int radius = getRadius();
-        double centerX = worldPosition.getX() + 0.5D;
-        double centerZ = worldPosition.getZ() + 0.5D;
-        return x >= centerX - radius
-                && x <= centerX + radius
-                && z >= centerZ - radius
-                && z <= centerZ + radius;
+        int blockX = net.minecraft.util.Mth.floor(x);
+        int blockZ = net.minecraft.util.Mth.floor(z);
+        return claimsChunk(blockX >> 4, blockZ >> 4);
     }
 
     public boolean contains(Entity entity) {
         return containsPosition(entity.getX(), entity.getZ());
     }
 
-    public int getRadius() {
-        // Level 1 starts with an 8-block horizontal radius; every level adds 4 blocks.
-        return 4 + restaurantLevel * 4;
+    public boolean claimsChunk(int chunkX, int chunkZ) {
+        ensureInitialClaim();
+        return claimedChunks.contains(ChunkPos.asLong(chunkX, chunkZ));
+    }
+
+    public List<Long> getClaimedChunkKeys() {
+        ensureInitialClaim();
+        return List.copyOf(claimedChunks);
+    }
+
+    public List<ChunkPos> getClaimedChunks() {
+        ensureInitialClaim();
+        return claimedChunks.stream().map(ChunkPos::new).toList();
+    }
+
+    public List<ChunkBoundary> getExternalBoundaries() {
+        ensureInitialClaim();
+        List<ChunkBoundary> boundaries = new ArrayList<>();
+        for (long key : claimedChunks) {
+            int chunkX = ChunkPos.getX(key);
+            int chunkZ = ChunkPos.getZ(key);
+            for (Direction direction : Direction.Plane.HORIZONTAL) {
+                int neighbourX = chunkX + direction.getStepX();
+                int neighbourZ = chunkZ + direction.getStepZ();
+                if (!claimsChunk(neighbourX, neighbourZ)) {
+                    boundaries.add(new ChunkBoundary(chunkX, chunkZ, direction));
+                }
+            }
+        }
+        return boundaries;
+    }
+
+    public int requiredLevelForNextChunk() {
+        ensureInitialClaim();
+        return Math.max(1, claimedChunks.size());
+    }
+
+    public long priceForNextChunk() {
+        int requiredLevel = requiredLevelForNextChunk();
+        return requiredLevel == 1 ? 100L : (long) (requiredLevel - 1) * 500L;
+    }
+
+    public boolean purchaseExpansionChunk(ServerPlayer player, int targetChunkX, int targetChunkZ) {
+        if (!(level instanceof ServerLevel serverLevel) || !isOwner(player.getUUID())) return false;
+        if (Math.abs(player.getX() - (worldPosition.getX() + 0.5D)) > 48.0D
+                || Math.abs(player.getZ() - (worldPosition.getZ() + 0.5D)) > 48.0D) {
+            return false;
+        }
+
+        long targetKey = ChunkPos.asLong(targetChunkX, targetChunkZ);
+        if (claimedChunks.contains(targetKey)) return false;
+
+        boolean adjacent = false;
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            if (claimsChunk(targetChunkX - direction.getStepX(), targetChunkZ - direction.getStepZ())) {
+                adjacent = true;
+                break;
+            }
+        }
+        if (!adjacent || RestaurantManager.isChunkClaimedByOther(serverLevel, this, targetChunkX, targetChunkZ)) {
+            player.displayClientMessage(Component.literal("That chunk cannot be claimed."), true);
+            return false;
+        }
+
+        int requiredLevel = requiredLevelForNextChunk();
+        long price = priceForNextChunk();
+        if (restaurantLevel < requiredLevel) {
+            player.displayClientMessage(Component.literal("Requires restaurant level " + requiredLevel + "."), true);
+            return false;
+        }
+        if (money < price) {
+            player.displayClientMessage(Component.literal("You need " + price + "$ restaurant money."), true);
+            return false;
+        }
+
+        money -= price;
+        claimedChunks.add(targetKey);
+        nextCustomerSpawnTick = 0L;
+        setChanged();
+        syncHudNow(serverLevel);
+        OrderUpNetworking.sendHeartData(player, this);
+        OrderUpNetworking.sendBorderUpdate(player, this);
+        player.displayClientMessage(Component.literal("Restaurant expanded for " + price + "$."), true);
+        return true;
+    }
+
+    public Vec3 findNearestExitTarget(double x, double z, double outsideDistance) {
+        ChunkBoundary closest = null;
+        double closestDistance = Double.MAX_VALUE;
+        double closestX = x;
+        double closestZ = z;
+
+        for (ChunkBoundary boundary : getExternalBoundaries()) {
+            ChunkPos chunk = new ChunkPos(boundary.chunkX(), boundary.chunkZ());
+            double edgeX;
+            double edgeZ;
+            switch (boundary.direction()) {
+                case EAST -> {
+                    edgeX = chunk.getMaxBlockX() + 1.0D;
+                    edgeZ = net.minecraft.util.Mth.clamp(z, chunk.getMinBlockZ() + 0.5D, chunk.getMaxBlockZ() + 0.5D);
+                }
+                case WEST -> {
+                    edgeX = chunk.getMinBlockX();
+                    edgeZ = net.minecraft.util.Mth.clamp(z, chunk.getMinBlockZ() + 0.5D, chunk.getMaxBlockZ() + 0.5D);
+                }
+                case SOUTH -> {
+                    edgeX = net.minecraft.util.Mth.clamp(x, chunk.getMinBlockX() + 0.5D, chunk.getMaxBlockX() + 0.5D);
+                    edgeZ = chunk.getMaxBlockZ() + 1.0D;
+                }
+                case NORTH -> {
+                    edgeX = net.minecraft.util.Mth.clamp(x, chunk.getMinBlockX() + 0.5D, chunk.getMaxBlockX() + 0.5D);
+                    edgeZ = chunk.getMinBlockZ();
+                }
+                default -> throw new IllegalStateException("Vertical restaurant boundary");
+            }
+
+            double distance = (edgeX - x) * (edgeX - x) + (edgeZ - z) * (edgeZ - z);
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closest = boundary;
+                closestX = edgeX;
+                closestZ = edgeZ;
+            }
+        }
+
+        if (closest == null) {
+            return Vec3.atCenterOf(worldPosition);
+        }
+        return new Vec3(
+                closestX + closest.direction().getStepX() * outsideDistance,
+                0.0D,
+                closestZ + closest.direction().getStepZ() * outsideDistance
+        );
+    }
+
+    public record ChunkBoundary(int chunkX, int chunkZ, Direction direction) {
+        public int targetChunkX() { return chunkX + direction.getStepX(); }
+        public int targetChunkZ() { return chunkZ + direction.getStepZ(); }
     }
 
     public int xpForNextLevel() {
@@ -117,7 +264,10 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
             restaurantLevel++;
         }
         setChanged();
-        if (level instanceof ServerLevel serverLevel) syncHudNow(serverLevel);
+        if (level instanceof ServerLevel serverLevel) {
+            syncHudNow(serverLevel);
+            syncOwnerBorderIfNearby(serverLevel);
+        }
     }
 
     /**
@@ -199,7 +349,20 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
     public void addMoney(long amount) {
         money = Math.max(0, money + amount);
         setChanged();
-        if (level instanceof ServerLevel serverLevel) syncHudNow(serverLevel);
+        if (level instanceof ServerLevel serverLevel) {
+            syncHudNow(serverLevel);
+            syncOwnerBorderIfNearby(serverLevel);
+        }
+    }
+
+    private void syncOwnerBorderIfNearby(ServerLevel serverLevel) {
+        if (ownerId == null) return;
+        ServerPlayer owner = serverLevel.getServer().getPlayerList().getPlayer(ownerId);
+        if (owner == null || owner.serverLevel() != serverLevel) return;
+        if (Math.abs(owner.getX() - (worldPosition.getX() + 0.5D)) <= 48.0D
+                && Math.abs(owner.getZ() - (worldPosition.getZ() + 0.5D)) <= 48.0D) {
+            OrderUpNetworking.sendBorderUpdate(owner, this);
+        }
     }
 
     public boolean isMember(UUID uuid) {
@@ -312,29 +475,19 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
         if (!level.hasChunk(menuBoardPos.getX() >> 4, menuBoardPos.getZ() >> 4)) {
             return null;
         }
-        if (!level.getBlockState(menuBoardPos).is(ModContent.MENU_BOARD.get())) {
+        if (!contains(menuBoardPos) || !level.getBlockState(menuBoardPos).is(ModContent.MENU_BOARD.get())) {
             return null;
         }
         return level.getBlockEntity(menuBoardPos) instanceof MenuBoardBlockEntity menu ? menu : null;
     }
 
     private MenuBoardBlockEntity findMenuInRestaurant(ServerLevel level, boolean requireFull) {
-        int radius = getRadius();
-        int minY = Math.max(level.getMinBuildHeight(), worldPosition.getY() - 8);
-        int maxY = Math.min(level.getMaxBuildHeight() - 1, worldPosition.getY() + 8);
-        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-
-        for (int x = worldPosition.getX() - radius; x <= worldPosition.getX() + radius; x++) {
-            for (int z = worldPosition.getZ() - radius; z <= worldPosition.getZ() + radius; z++) {
-                for (int y = minY; y <= maxY; y++) {
-                    cursor.set(x, y, z);
-                    if (!level.getBlockState(cursor).is(ModContent.MENU_BOARD.get())) {
-                        continue;
-                    }
-                    if (level.getBlockEntity(cursor) instanceof MenuBoardBlockEntity menu
-                            && (!requireFull || menu.isFull())) {
-                        return menu;
-                    }
+        for (ChunkPos chunk : getClaimedChunks()) {
+            if (!level.hasChunk(chunk.x, chunk.z)) continue;
+            for (BlockEntity blockEntity : level.getChunk(chunk.x, chunk.z).getBlockEntities().values()) {
+                if (blockEntity instanceof MenuBoardBlockEntity menu
+                        && (!requireFull || menu.isFull())) {
+                    return menu;
                 }
             }
         }
@@ -348,10 +501,12 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
     }
 
     private void validateLinkedBlocks(ServerLevel level) {
-        if (menuBoardPos != null && !level.getBlockState(menuBoardPos).is(ModContent.MENU_BOARD.get())) {
+        if (menuBoardPos != null
+                && (!contains(menuBoardPos) || !level.getBlockState(menuBoardPos).is(ModContent.MENU_BOARD.get()))) {
             setMenuBoardPos(null);
         }
-        if (openSignPos != null && !level.getBlockState(openSignPos).is(ModContent.OPEN_SIGN.get())) {
+        if (openSignPos != null
+                && (!contains(openSignPos) || !level.getBlockState(openSignPos).is(ModContent.OPEN_SIGN.get()))) {
             setOpenSignPos(null);
         }
     }
@@ -424,18 +579,12 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
     }
 
     private BlockPos findOpenSignInRestaurant(ServerLevel level) {
-        int radius = getRadius();
-        int minY = Math.max(level.getMinBuildHeight(), worldPosition.getY() - 8);
-        int maxY = Math.min(level.getMaxBuildHeight() - 1, worldPosition.getY() + 8);
-        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-
-        for (int x = worldPosition.getX() - radius; x <= worldPosition.getX() + radius; x++) {
-            for (int z = worldPosition.getZ() - radius; z <= worldPosition.getZ() + radius; z++) {
-                for (int y = minY; y <= maxY; y++) {
-                    cursor.set(x, y, z);
-                    if (level.getBlockState(cursor).is(ModContent.OPEN_SIGN.get())) {
-                        return cursor.immutable();
-                    }
+        for (ChunkPos chunk : getClaimedChunks()) {
+            if (!level.hasChunk(chunk.x, chunk.z)) continue;
+            for (BlockEntity blockEntity : level.getChunk(chunk.x, chunk.z).getBlockEntities().values()) {
+                BlockPos position = blockEntity.getBlockPos();
+                if (level.getBlockState(position).is(ModContent.OPEN_SIGN.get())) {
+                    return position.immutable();
                 }
             }
         }
@@ -480,23 +629,45 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
 
     private List<BlockPos> collectSpawnCandidates(ServerLevel level) {
         List<BlockPos> columns = new ArrayList<>();
-        int radius = getRadius();
-
-        // Every valid perimeter column is considered, not just a few random guesses.
-        // The resulting list is shuffled, so customers still arrive from random directions.
-        for (int outside = 4; outside <= 5; outside++) {
-            int distance = radius + outside;
-            for (int offset = -radius; offset <= radius; offset++) {
-                columns.add(new BlockPos(worldPosition.getX() + distance, worldPosition.getY(), worldPosition.getZ() + offset));
-                columns.add(new BlockPos(worldPosition.getX() - distance, worldPosition.getY(), worldPosition.getZ() + offset));
-                columns.add(new BlockPos(worldPosition.getX() + offset, worldPosition.getY(), worldPosition.getZ() + distance));
-                columns.add(new BlockPos(worldPosition.getX() + offset, worldPosition.getY(), worldPosition.getZ() - distance));
+        for (ChunkBoundary boundary : getExternalBoundaries()) {
+            ChunkPos chunk = new ChunkPos(boundary.chunkX(), boundary.chunkZ());
+            for (int outside = 4; outside <= 5; outside++) {
+                switch (boundary.direction()) {
+                    case EAST -> {
+                        int x = chunk.getMaxBlockX() + outside;
+                        for (int z = chunk.getMinBlockZ(); z <= chunk.getMaxBlockZ(); z++) {
+                            columns.add(new BlockPos(x, worldPosition.getY(), z));
+                        }
+                    }
+                    case WEST -> {
+                        int x = chunk.getMinBlockX() - outside;
+                        for (int z = chunk.getMinBlockZ(); z <= chunk.getMaxBlockZ(); z++) {
+                            columns.add(new BlockPos(x, worldPosition.getY(), z));
+                        }
+                    }
+                    case SOUTH -> {
+                        int z = chunk.getMaxBlockZ() + outside;
+                        for (int x = chunk.getMinBlockX(); x <= chunk.getMaxBlockX(); x++) {
+                            columns.add(new BlockPos(x, worldPosition.getY(), z));
+                        }
+                    }
+                    case NORTH -> {
+                        int z = chunk.getMinBlockZ() - outside;
+                        for (int x = chunk.getMinBlockX(); x <= chunk.getMaxBlockX(); x++) {
+                            columns.add(new BlockPos(x, worldPosition.getY(), z));
+                        }
+                    }
+                    default -> { }
+                }
             }
         }
         shuffle(level, columns);
 
         List<BlockPos> safePositions = new ArrayList<>();
+        Set<Long> seenColumns = new LinkedHashSet<>();
         for (BlockPos column : columns) {
+            long columnKey = BlockPos.asLong(column.getX(), 0, column.getZ());
+            if (!seenColumns.add(columnKey)) continue;
             BlockPos safe = findSafeSpawnInColumn(level, column.getX(), column.getZ());
             if (safe != null) safePositions.add(safe);
         }
@@ -560,6 +731,8 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
         tag.putBoolean("Open", open);
         if (menuBoardPos != null) tag.putLong("MenuBoardPos", menuBoardPos.asLong());
         if (openSignPos != null) tag.putLong("OpenSignPos", openSignPos.asLong());
+        ensureInitialClaim();
+        tag.putLongArray("ClaimedChunks", claimedChunks.stream().mapToLong(Long::longValue).toArray());
 
         ListTag pendingXpList = new ListTag();
         for (PendingXpReward reward : pendingXpRewards) {
@@ -595,6 +768,12 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
         nextCustomerSpawnTick = 0L;
         menuBoardPos = tag.contains("MenuBoardPos") ? BlockPos.of(tag.getLong("MenuBoardPos")) : null;
         openSignPos = tag.contains("OpenSignPos") ? BlockPos.of(tag.getLong("OpenSignPos")) : null;
+
+        claimedChunks.clear();
+        for (long claimedChunk : tag.getLongArray("ClaimedChunks")) {
+            claimedChunks.add(claimedChunk);
+        }
+        ensureInitialClaim();
 
         pendingXpRewards.clear();
         ListTag pendingXpList = tag.getList("PendingRestaurantXp", Tag.TAG_COMPOUND);

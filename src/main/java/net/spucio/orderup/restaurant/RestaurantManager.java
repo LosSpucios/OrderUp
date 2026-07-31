@@ -2,9 +2,12 @@ package net.spucio.orderup.restaurant;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.SectionPos;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.phys.AABB;
 import net.spucio.orderup.ModContent;
 import net.spucio.orderup.blockentity.MenuBoardBlockEntity;
@@ -60,6 +63,23 @@ public final class RestaurantManager {
         }
     }
 
+    public static boolean isChunkClaimedByOther(
+            ServerLevel level,
+            RestaurantHeartBlockEntity ignoredHeart,
+            int chunkX,
+            int chunkZ
+    ) {
+        synchronized (RestaurantManager.class) {
+            Map<BlockPos, RestaurantHeartBlockEntity> map = HEARTS.get(level);
+            if (map == null) return false;
+            for (RestaurantHeartBlockEntity heart : map.values()) {
+                if (heart == ignoredHeart || heart.isRemoved()) continue;
+                if (heart.claimsChunk(chunkX, chunkZ)) return true;
+            }
+            return false;
+        }
+    }
+
     public static synchronized void clear(ServerLevel level) {
         HEARTS.remove(level);
     }
@@ -73,18 +93,49 @@ public final class RestaurantManager {
     }
 
     public static List<BlockPos> findFreeChairs(ServerLevel level, RestaurantHeartBlockEntity heart) {
-        int radius = heart.getRadius();
-        int minY = Math.max(level.getMinBuildHeight(), heart.getBlockPos().getY() - 8);
-        int maxY = Math.min(level.getMaxBuildHeight() - 1, heart.getBlockPos().getY() + 8);
-        List<BlockPos> chairs = new ArrayList<>();
-
         Set<BlockPos> reservedChairs = reservedChairPositions(level, heart);
-        for (int x = heart.getBlockPos().getX() - radius; x <= heart.getBlockPos().getX() + radius; x++) {
-            for (int z = heart.getBlockPos().getZ() - radius; z <= heart.getBlockPos().getZ() + radius; z++) {
-                for (int y = minY; y <= maxY; y++) {
-                    BlockPos pos = new BlockPos(x, y, z);
-                    if (level.getBlockState(pos).is(ModContent.CHAIR.get()) && !reservedChairs.contains(pos)) {
-                        chairs.add(pos);
+        return findChairPositions(level, heart).stream()
+                .filter(chair -> !reservedChairs.contains(chair))
+                .toList();
+    }
+
+    public static ChairStats getChairStats(ServerLevel level, RestaurantHeartBlockEntity heart) {
+        Set<BlockPos> reservedChairs = reservedChairPositions(level, heart);
+        List<BlockPos> chairs = findChairPositions(level, heart);
+        int occupied = 0;
+        for (BlockPos chair : chairs) {
+            if (reservedChairs.contains(chair)) occupied++;
+        }
+        return new ChairStats(occupied, chairs.size());
+    }
+
+    private static List<BlockPos> findChairPositions(
+            ServerLevel level,
+            RestaurantHeartBlockEntity heart
+    ) {
+        List<BlockPos> chairs = new ArrayList<>();
+        for (ChunkPos chunkPos : heart.getClaimedChunks()) {
+            if (!level.hasChunk(chunkPos.x, chunkPos.z)) continue;
+            LevelChunkSection[] sections = level.getChunk(chunkPos.x, chunkPos.z).getSections();
+            for (int sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+                LevelChunkSection section = sections[sectionIndex];
+                if (section == null || section.hasOnlyAir()
+                        || !section.maybeHas(state -> state.is(ModContent.CHAIR.get()))) {
+                    continue;
+                }
+
+                int sectionY = level.getSectionYFromSectionIndex(sectionIndex);
+                int baseY = SectionPos.sectionToBlockCoord(sectionY);
+                for (int localY = 0; localY < 16; localY++) {
+                    for (int localX = 0; localX < 16; localX++) {
+                        for (int localZ = 0; localZ < 16; localZ++) {
+                            if (!section.getBlockState(localX, localY, localZ).is(ModContent.CHAIR.get())) continue;
+                            chairs.add(new BlockPos(
+                                    chunkPos.getBlockX(localX),
+                                    baseY + localY,
+                                    chunkPos.getBlockZ(localZ)
+                            ));
+                        }
                     }
                 }
             }
@@ -92,45 +143,15 @@ public final class RestaurantManager {
         return chairs;
     }
 
-    public static ChairStats getChairStats(ServerLevel level, RestaurantHeartBlockEntity heart) {
-        int radius = heart.getRadius();
-        int minY = Math.max(level.getMinBuildHeight(), heart.getBlockPos().getY() - 8);
-        int maxY = Math.min(level.getMaxBuildHeight() - 1, heart.getBlockPos().getY() + 8);
-        Set<BlockPos> reservedChairs = reservedChairPositions(level, heart);
-
-        int total = 0;
-        int occupied = 0;
-        for (int x = heart.getBlockPos().getX() - radius; x <= heart.getBlockPos().getX() + radius; x++) {
-            for (int z = heart.getBlockPos().getZ() - radius; z <= heart.getBlockPos().getZ() + radius; z++) {
-                for (int y = minY; y <= maxY; y++) {
-                    BlockPos pos = new BlockPos(x, y, z);
-                    if (!level.getBlockState(pos).is(ModContent.CHAIR.get())) continue;
-                    total++;
-                    if (reservedChairs.contains(pos)) occupied++;
-                }
-            }
-        }
-        return new ChairStats(occupied, total);
-    }
-
     private static Set<BlockPos> reservedChairPositions(
             ServerLevel level,
             RestaurantHeartBlockEntity heart
     ) {
-        int searchRadius = heart.getRadius() + 40;
-        AABB searchArea = new AABB(
-                heart.getBlockPos().getX() - searchRadius,
-                level.getMinBuildHeight(),
-                heart.getBlockPos().getZ() - searchRadius,
-                heart.getBlockPos().getX() + searchRadius + 1.0D,
-                level.getMaxBuildHeight(),
-                heart.getBlockPos().getZ() + searchRadius + 1.0D
-        );
-
+        AABB claimedBounds = claimedBounds(level, heart, 40.0D);
         Set<BlockPos> reserved = new HashSet<>();
         for (CustomerEntity customer : level.getEntitiesOfClass(
                 CustomerEntity.class,
-                searchArea,
+                claimedBounds,
                 entity -> entity.belongsTo(heart.getBlockPos()) && !entity.isLeaving()
         )) {
             BlockPos chair = customer.getTargetChair();
@@ -139,8 +160,30 @@ public final class RestaurantManager {
         return reserved;
     }
 
+    private static AABB claimedBounds(ServerLevel level, RestaurantHeartBlockEntity heart, double inflate) {
+        List<ChunkPos> chunks = heart.getClaimedChunks();
+        int minX = heart.getBlockPos().getX();
+        int maxX = minX;
+        int minZ = heart.getBlockPos().getZ();
+        int maxZ = minZ;
+        for (ChunkPos chunk : chunks) {
+            minX = Math.min(minX, chunk.getMinBlockX());
+            maxX = Math.max(maxX, chunk.getMaxBlockX() + 1);
+            minZ = Math.min(minZ, chunk.getMinBlockZ());
+            maxZ = Math.max(maxZ, chunk.getMaxBlockZ() + 1);
+        }
+        return new AABB(
+                minX - inflate,
+                level.getMinBuildHeight(),
+                minZ - inflate,
+                maxX + inflate,
+                level.getMaxBuildHeight(),
+                maxZ + inflate
+        );
+    }
+
     public static boolean isChairFree(ServerLevel level, RestaurantHeartBlockEntity heart, BlockPos chairPos) {
-        if (!level.getBlockState(chairPos).is(ModContent.CHAIR.get())) return false;
+        if (!heart.contains(chairPos) || !level.getBlockState(chairPos).is(ModContent.CHAIR.get())) return false;
         for (CustomerEntity customer : level.getEntitiesOfClass(
                 CustomerEntity.class,
                 new AABB(chairPos).inflate(2.0D),
@@ -155,20 +198,12 @@ public final class RestaurantManager {
             ServerLevel level,
             RestaurantHeartBlockEntity heart
     ) {
-        int radius = heart.getRadius();
-        int minY = Math.max(level.getMinBuildHeight(), heart.getBlockPos().getY() - 8);
-        int maxY = Math.min(level.getMaxBuildHeight() - 1, heart.getBlockPos().getY() + 8);
         List<MenuBoardBlockEntity> menus = new ArrayList<>();
-        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-
-        for (int x = heart.getBlockPos().getX() - radius; x <= heart.getBlockPos().getX() + radius; x++) {
-            for (int z = heart.getBlockPos().getZ() - radius; z <= heart.getBlockPos().getZ() + radius; z++) {
-                for (int y = minY; y <= maxY; y++) {
-                    cursor.set(x, y, z);
-                    if (!level.getBlockState(cursor).is(ModContent.MENU_BOARD.get())) continue;
-                    if (level.getBlockEntity(cursor) instanceof MenuBoardBlockEntity menu) {
-                        menus.add(menu);
-                    }
+        for (ChunkPos chunk : heart.getClaimedChunks()) {
+            if (!level.hasChunk(chunk.x, chunk.z)) continue;
+            for (var blockEntity : level.getChunk(chunk.x, chunk.z).getBlockEntities().values()) {
+                if (blockEntity instanceof MenuBoardBlockEntity menu) {
+                    menus.add(menu);
                 }
             }
         }
@@ -177,9 +212,6 @@ public final class RestaurantManager {
 
     /**
      * Makes every Menu Board inside one restaurant use the same six ghost slots.
-     * The board with the most configured slots wins when old saves contain
-     * divergent menus; ties prefer the currently linked board, then the board
-     * that triggered the synchronization.
      */
     public static void synchronizeMenuBoards(
             ServerLevel level,
@@ -221,7 +253,9 @@ public final class RestaurantManager {
             MenuBoardBlockEntity preferredMenu
     ) {
         List<MenuBoardBlockEntity> menus = new ArrayList<>(findMenuBoards(level, heart));
-        if (preferredMenu != null && !menus.contains(preferredMenu)) menus.add(preferredMenu);
+        if (preferredMenu != null && heart.contains(preferredMenu.getBlockPos()) && !menus.contains(preferredMenu)) {
+            menus.add(preferredMenu);
+        }
 
         if (menus.isEmpty()) {
             heart.setMenuBoardPos(null);
@@ -256,8 +290,8 @@ public final class RestaurantManager {
         for (CustomerEntity customer : level.getEntitiesOfClass(
                 CustomerEntity.class,
                 new AABB(
-                        heartPos.getX() - 128.0D, level.getMinBuildHeight(), heartPos.getZ() - 128.0D,
-                        heartPos.getX() + 129.0D, level.getMaxBuildHeight(), heartPos.getZ() + 129.0D
+                        heartPos.getX() - 256.0D, level.getMinBuildHeight(), heartPos.getZ() - 256.0D,
+                        heartPos.getX() + 257.0D, level.getMaxBuildHeight(), heartPos.getZ() + 257.0D
                 ),
                 entity -> entity.belongsTo(heartPos)
         )) {
