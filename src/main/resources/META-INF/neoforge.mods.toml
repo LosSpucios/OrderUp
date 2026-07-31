@@ -25,3 +25,10 @@ type="required"
 versionRange="[1.21.1]"
 ordering="NONE"
 side="BOTH"
+
+[[dependencies.orderup]]
+modId="jei"
+type="optional"
+versionRange="[19.0.0,)"
+ordering="NONE"
+side="CLIENT"

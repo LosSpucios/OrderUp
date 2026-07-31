@@ -193,8 +193,8 @@ public class RestaurantHeartScreen extends Screen {
     }
 
     private void renderRestaurantProgress(GuiGraphics graphics, int left, int top) {
-        graphics.drawCenteredString(
-                font,
+        drawCenteredWhiteShadow(
+                graphics,
                 Component.literal("Restaurant Level " + data.level()),
                 left + GUI_WIDTH / 2,
                 top + 52,
@@ -214,8 +214,8 @@ public class RestaurantHeartScreen extends Screen {
             graphics.fill(barX + 1, barY + 1, barX + 1 + fill, barY + barHeight - 1, 0xFF72AD58);
         }
 
-        graphics.drawCenteredString(
-                font,
+        drawCenteredWhiteShadow(
+                graphics,
                 data.xp() + " / " + data.nextXp() + " XP",
                 left + GUI_WIDTH / 2,
                 top + 81,
@@ -224,38 +224,37 @@ public class RestaurantHeartScreen extends Screen {
     }
 
     private void renderCrew(GuiGraphics graphics, int left, int top) {
-        graphics.drawString(font, Component.literal("Crew"), left + 27, top + 101, 0xFF4A2D18, false);
+        drawWhiteShadow(graphics, Component.literal("Crew"), left + 27, top + 101, 0xFF4A2D18);
 
         String moneyText = MoneyFormatter.withDollarPrefix(data.money());
-        graphics.drawString(
-                font,
+        drawWhiteShadow(
+                graphics,
                 moneyText,
                 left + 272 - font.width(moneyText),
                 top + 101,
-                0xFF3D873F,
-                false
+                0xFF3D873F
         );
 
         renderPlayerFace(graphics, data.ownerId(), data.ownerName(), left + 28, top + OWNER_ROW_Y, 18);
-        graphics.drawString(font, data.ownerName(), left + 53, top + OWNER_ROW_Y + 5, 0xFF3B2A1D, false);
-        graphics.drawString(font, Component.literal("Founder"), left + 215, top + OWNER_ROW_Y + 5, 0xFF8B623E, false);
+        drawWhiteShadow(graphics, data.ownerName(), left + 53, top + OWNER_ROW_Y + 5, 0xFF3B2A1D);
+        drawWhiteShadow(graphics, Component.literal("Founder"), left + 215, top + OWNER_ROW_Y + 5, 0xFF8B623E);
 
         List<OrderUpNetworking.MemberData> members = nonOwnerMembers();
         for (int i = 0; i < members.size(); i++) {
             OrderUpNetworking.MemberData member = members.get(i);
             int rowY = top + MEMBER_ROWS_Y + i * ROW_STEP;
             renderPlayerFace(graphics, member.id(), member.name(), left + 28, rowY, 18);
-            graphics.drawString(font, member.name(), left + 53, rowY + 5, 0xFF3B2A1D, false);
+            drawWhiteShadow(graphics, member.name(), left + 53, rowY + 5, 0xFF3B2A1D);
 
             if (isLocalPlayerOwner()) {
-                graphics.drawString(font, "✕", left + 255, rowY + 5, 0xFF9D2F2F, false);
+                drawWhiteShadow(graphics, "✕", left + 255, rowY + 5, 0xFF9D2F2F);
             }
         }
 
         if (addMode) {
             int addRow = top + getAddRowY();
             graphics.fill(left + 28, addRow, left + 48, addRow + 20, 0xFF191919);
-            graphics.drawCenteredString(font, "?", left + 38, addRow + 6, 0xFFFFFFFF);
+            drawCenteredWhiteShadow(graphics, "?", left + 38, addRow + 6, 0xFFFFFFFF);
         }
     }
 
@@ -278,7 +277,7 @@ public class RestaurantHeartScreen extends Screen {
         } catch (RuntimeException ignored) {
             graphics.fill(x, y, x + size, y + size, 0xFF5F4739);
             String initial = name.isBlank() ? "?" : name.substring(0, 1).toUpperCase();
-            graphics.drawCenteredString(font, initial, x + size / 2, y + 5, 0xFFFFFFFF);
+            drawCenteredWhiteShadow(graphics, initial, x + size / 2, y + 5, 0xFFFFFFFF);
         }
     }
 
@@ -325,6 +324,26 @@ public class RestaurantHeartScreen extends Screen {
         return minecraft != null
                 && minecraft.player != null
                 && minecraft.player.getUUID().equals(data.ownerId());
+    }
+
+    private void drawWhiteShadow(GuiGraphics graphics, Component text, int x, int y, int color) {
+        graphics.drawString(font, text, x + 1, y + 1, 0xFFFFFFFF, false);
+        graphics.drawString(font, text, x, y, color, false);
+    }
+
+    private void drawWhiteShadow(GuiGraphics graphics, String text, int x, int y, int color) {
+        graphics.drawString(font, text, x + 1, y + 1, 0xFFFFFFFF, false);
+        graphics.drawString(font, text, x, y, color, false);
+    }
+
+    private void drawCenteredWhiteShadow(GuiGraphics graphics, Component text, int centerX, int y, int color) {
+        int x = centerX - font.width(text) / 2;
+        drawWhiteShadow(graphics, text, x, y, color);
+    }
+
+    private void drawCenteredWhiteShadow(GuiGraphics graphics, String text, int centerX, int y, int color) {
+        int x = centerX - font.width(text) / 2;
+        drawWhiteShadow(graphics, text, x, y, color);
     }
 
     @Override

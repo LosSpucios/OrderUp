@@ -72,20 +72,20 @@ public class MenuBoardScreen extends Screen {
 
         renderPanel(graphics, left, top);
 
-        graphics.drawCenteredString(
-                font,
+        drawCenteredWhiteShadow(
+                graphics,
                 Component.literal("RESTAURANT MENU"),
                 left + GUI_WIDTH / 2,
                 top + 13,
                 0xFFF9E7C6
         );
 
-        graphics.drawString(font, Component.literal("Food"), left + 20, top + 39, 0xFF553824, false);
+        drawWhiteShadow(graphics, Component.literal("Food"), left + 20, top + 39, 0xFF553824);
         for (int i = 0; i < MenuBoardBlockEntity.FOOD_SLOTS; i++) {
             renderMenuSlot(graphics, foodSlotX(left, i), top + 53, i, mouseX, mouseY);
         }
 
-        graphics.drawString(font, Component.literal("Drinks"), left + 20, top + 96, 0xFF553824, false);
+        drawWhiteShadow(graphics, Component.literal("Drinks"), left + 20, top + 96, 0xFF553824);
         for (int i = 0; i < MenuBoardBlockEntity.DRINK_SLOTS; i++) {
             renderMenuSlot(
                     graphics,
@@ -97,15 +97,15 @@ public class MenuBoardScreen extends Screen {
             );
         }
 
-        graphics.drawCenteredString(
-                font,
+        drawCenteredWhiteShadow(
+                graphics,
                 Component.literal("Drag to add  |  Right-click to clear"),
                 left + GUI_WIDTH / 2,
                 top + 154,
                 0xFF6A5140
         );
 
-        graphics.drawString(font, Component.literal("Inventory"), left + 36, top + 171, 0xFF553824, false);
+        drawWhiteShadow(graphics, Component.literal("Inventory"), left + 36, top + 171, 0xFF553824);
 
         if (minecraft != null && minecraft.player != null) {
             int inventoryX = inventoryX(left);
@@ -169,8 +169,8 @@ public class MenuBoardScreen extends Screen {
         }
 
         String price = data.prices().size() > slot ? "$" + data.prices().get(slot) : "$0";
-        graphics.drawCenteredString(
-                font,
+        drawCenteredWhiteShadow(
+                graphics,
                 price,
                 x + MENU_SLOT_SIZE / 2,
                 y + MENU_SLOT_SIZE + 5,
@@ -301,6 +301,96 @@ public class MenuBoardScreen extends Screen {
 
     private static boolean isInside(double mouseX, double mouseY, int x, int y, int width, int height) {
         return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
+    }
+
+    public int getGuiLeftForJei() {
+        return (width - GUI_WIDTH) / 2;
+    }
+
+    public int getGuiTopForJei() {
+        return (height - GUI_HEIGHT) / 2;
+    }
+
+    public int getGuiWidthForJei() {
+        return GUI_WIDTH;
+    }
+
+    public int getGuiHeightForJei() {
+        return GUI_HEIGHT;
+    }
+
+    public int getScreenWidthForJei() {
+        return width;
+    }
+
+    public int getScreenHeightForJei() {
+        return height;
+    }
+
+    public int getMenuSlotCountForJei() {
+        return MenuBoardBlockEntity.SLOT_COUNT;
+    }
+
+    public int getMenuSlotXForJei(int slot) {
+        int left = getGuiLeftForJei();
+        if (slot >= 0 && slot < MenuBoardBlockEntity.FOOD_SLOTS) {
+            return foodSlotX(left, slot);
+        }
+        int drinkIndex = slot - MenuBoardBlockEntity.FOOD_SLOTS;
+        if (drinkIndex >= 0 && drinkIndex < MenuBoardBlockEntity.DRINK_SLOTS) {
+            return drinkSlotX(left, drinkIndex);
+        }
+        return -1;
+    }
+
+    public int getMenuSlotYForJei(int slot) {
+        if (slot >= 0 && slot < MenuBoardBlockEntity.FOOD_SLOTS) {
+            return getGuiTopForJei() + 53;
+        }
+        int drinkIndex = slot - MenuBoardBlockEntity.FOOD_SLOTS;
+        if (drinkIndex >= 0 && drinkIndex < MenuBoardBlockEntity.DRINK_SLOTS) {
+            return getGuiTopForJei() + 110;
+        }
+        return -1;
+    }
+
+    public int getMenuSlotSizeForJei() {
+        return MENU_SLOT_SIZE;
+    }
+
+    public boolean canAcceptJeiIngredient(ItemStack stack, int slot) {
+        return slot >= 0
+                && slot < MenuBoardBlockEntity.SLOT_COUNT
+                && !stack.isEmpty()
+                && isValidForSlot(stack, slot)
+                && !isItemAlreadyInMenu(stack, slot);
+    }
+
+    public void acceptJeiIngredient(ItemStack stack, int slot) {
+        if (!canAcceptJeiIngredient(stack, slot)) return;
+
+        ItemStack ghostStack = stack.copyWithCount(1);
+        menuStacks.set(slot, ghostStack);
+        String id = BuiltInRegistries.ITEM.getKey(ghostStack.getItem()).toString();
+        PacketDistributor.sendToServer(
+                new OrderUpNetworking.SetMenuSlotPayload(data.menuPos(), slot, id)
+        );
+    }
+
+    private void drawWhiteShadow(GuiGraphics graphics, Component text, int x, int y, int color) {
+        graphics.drawString(font, text, x + 1, y + 1, 0xFFFFFFFF, false);
+        graphics.drawString(font, text, x, y, color, false);
+    }
+
+    private void drawCenteredWhiteShadow(GuiGraphics graphics, Component text, int centerX, int y, int color) {
+        int x = centerX - font.width(text) / 2;
+        drawWhiteShadow(graphics, text, x, y, color);
+    }
+
+    private void drawCenteredWhiteShadow(GuiGraphics graphics, String text, int centerX, int y, int color) {
+        int x = centerX - font.width(text) / 2;
+        graphics.drawString(font, text, x + 1, y + 1, 0xFFFFFFFF, false);
+        graphics.drawString(font, text, x, y, color, false);
     }
 
     @Override
