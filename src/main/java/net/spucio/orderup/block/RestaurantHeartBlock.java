@@ -1,14 +1,19 @@
 package net.spucio.orderup.block;
 
 import com.mojang.serialization.MapCodec;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.ItemLore;
 import net.minecraft.world.level.Level;
+import net.minecraft.stats.Stats;
 import net.minecraft.world.level.block.BaseEntityBlock;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -21,6 +26,9 @@ import net.spucio.orderup.ModContent;
 import net.spucio.orderup.blockentity.RestaurantHeartBlockEntity;
 import net.spucio.orderup.network.OrderUpNetworking;
 import net.spucio.orderup.restaurant.RestaurantManager;
+import net.spucio.orderup.util.MoneyFormatter;
+
+import java.util.List;
 
 public class RestaurantHeartBlock extends BaseEntityBlock {
     public static final MapCodec<RestaurantHeartBlock> CODEC = simpleCodec(RestaurantHeartBlock::new);
@@ -60,6 +68,39 @@ public class RestaurantHeartBlock extends BaseEntityBlock {
                 && level.getBlockEntity(pos) instanceof RestaurantHeartBlockEntity heart) {
             heart.initializeOwner(player);
         }
+    }
+
+    @Override
+    public void playerDestroy(
+            Level level,
+            Player player,
+            BlockPos pos,
+            BlockState state,
+            @Nullable BlockEntity blockEntity,
+            ItemStack tool
+    ) {
+        if (level instanceof ServerLevel serverLevel
+                && blockEntity instanceof RestaurantHeartBlockEntity heart) {
+            player.awardStat(Stats.BLOCK_MINED.get(this));
+            player.causeFoodExhaustion(0.005F);
+            ItemStack heartStack = new ItemStack(ModContent.RESTAURANT_HEART_ITEM.get());
+            heart.saveToItem(heartStack, serverLevel.registryAccess());
+            heartStack.set(
+                    DataComponents.LORE,
+                    new ItemLore(List.of(
+                            Component.literal("Members: " + heart.getMembers().size())
+                                    .withStyle(ChatFormatting.GRAY),
+                            Component.literal("Money: " + MoneyFormatter.withDollarSuffix(heart.getMoney()))
+                                    .withStyle(ChatFormatting.GREEN),
+                            Component.literal("Level: " + heart.getRestaurantLevel())
+                                    .withStyle(ChatFormatting.GOLD)
+                    ))
+            );
+            popResource(level, pos, heartStack);
+            return;
+        }
+
+        super.playerDestroy(level, player, pos, state, blockEntity, tool);
     }
 
     @Override

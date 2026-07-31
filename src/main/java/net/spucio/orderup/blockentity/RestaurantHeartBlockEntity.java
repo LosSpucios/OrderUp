@@ -748,6 +748,9 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
         tag.putBoolean("Open", open);
         if (menuBoardPos != null) tag.putLong("MenuBoardPos", menuBoardPos.asLong());
         if (openSignPos != null) tag.putLong("OpenSignPos", openSignPos.asLong());
+        tag.putInt("StoredHeartX", worldPosition.getX());
+        tag.putInt("StoredHeartY", worldPosition.getY());
+        tag.putInt("StoredHeartZ", worldPosition.getZ());
         ensureInitialClaim();
         tag.putLongArray("ClaimedChunks", claimedChunks.stream().mapToLong(Long::longValue).toArray());
 
@@ -785,12 +788,35 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
                 : MoneyFormatter.dollarsToHalfUnits(Math.max(0L, tag.getLong("Money")));
         open = tag.contains("Open") && tag.getBoolean("Open");
         nextCustomerSpawnTick = 0L;
-        menuBoardPos = tag.contains("MenuBoardPos") ? BlockPos.of(tag.getLong("MenuBoardPos")) : null;
-        openSignPos = tag.contains("OpenSignPos") ? BlockPos.of(tag.getLong("OpenSignPos")) : null;
 
+        int storedHeartX = tag.contains("StoredHeartX", Tag.TAG_INT)
+                ? tag.getInt("StoredHeartX")
+                : worldPosition.getX();
+        int storedHeartY = tag.contains("StoredHeartY", Tag.TAG_INT)
+                ? tag.getInt("StoredHeartY")
+                : worldPosition.getY();
+        int storedHeartZ = tag.contains("StoredHeartZ", Tag.TAG_INT)
+                ? tag.getInt("StoredHeartZ")
+                : worldPosition.getZ();
+        boolean relocated = storedHeartX != worldPosition.getX()
+                || storedHeartY != worldPosition.getY()
+                || storedHeartZ != worldPosition.getZ();
+
+        menuBoardPos = relocated || !tag.contains("MenuBoardPos")
+                ? null
+                : BlockPos.of(tag.getLong("MenuBoardPos"));
+        openSignPos = relocated || !tag.contains("OpenSignPos")
+                ? null
+                : BlockPos.of(tag.getLong("OpenSignPos"));
+        if (relocated) open = false;
+
+        int chunkDeltaX = (worldPosition.getX() >> 4) - (storedHeartX >> 4);
+        int chunkDeltaZ = (worldPosition.getZ() >> 4) - (storedHeartZ >> 4);
         claimedChunks.clear();
         for (long claimedChunk : tag.getLongArray("ClaimedChunks")) {
-            claimedChunks.add(claimedChunk);
+            int chunkX = ChunkPos.getX(claimedChunk) + chunkDeltaX;
+            int chunkZ = ChunkPos.getZ(claimedChunk) + chunkDeltaZ;
+            claimedChunks.add(ChunkPos.asLong(chunkX, chunkZ));
         }
         ensureInitialClaim();
 
@@ -804,6 +830,13 @@ public class RestaurantHeartBlockEntity extends BlockEntity {
             BlockPos soundPos = rewardTag.contains("SoundPos")
                     ? BlockPos.of(rewardTag.getLong("SoundPos"))
                     : worldPosition;
+            if (relocated) {
+                soundPos = soundPos.offset(
+                        worldPosition.getX() - storedHeartX,
+                        worldPosition.getY() - storedHeartY,
+                        worldPosition.getZ() - storedHeartZ
+                );
+            }
             pendingXpRewards.add(new PendingXpReward(amount, releaseTick, soundPos));
         }
 
