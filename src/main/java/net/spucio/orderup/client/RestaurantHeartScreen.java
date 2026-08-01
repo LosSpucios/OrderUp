@@ -22,10 +22,12 @@ import java.util.UUID;
 
 public class RestaurantHeartScreen extends Screen {
     private static final int GUI_WIDTH = 300;
-    private static final int MIN_GUI_HEIGHT = 194;
+    private static final int GUI_HEIGHT = 220;
     private static final int OWNER_ROW_Y = 116;
     private static final int MEMBER_ROWS_Y = 140;
+    private static final int VISIBLE_MEMBER_ROWS = 2;
     private static final int ROW_STEP = 22;
+    private static final int MEMBER_VIEW_HEIGHT = VISIBLE_MEMBER_ROWS * ROW_STEP;
 
     private OrderUpNetworking.HeartDataPayload data;
     private EditBox restaurantNameBox;
@@ -34,6 +36,7 @@ public class RestaurantHeartScreen extends Screen {
     private Button confirmAddButton;
     private Button cancelAddButton;
     private boolean addMode;
+    private int memberScrollOffset;
 
     public RestaurantHeartScreen(OrderUpNetworking.HeartDataPayload data) {
         super(Component.translatable("screen.orderup.restaurant_heart"));
@@ -89,6 +92,7 @@ public class RestaurantHeartScreen extends Screen {
                 .build();
         addRenderableWidget(cancelAddButton);
 
+        clampMemberScroll();
         repositionWidgets();
         updateWidgetVisibility();
     }
@@ -133,7 +137,6 @@ public class RestaurantHeartScreen extends Screen {
     private void setAddMode(boolean value) {
         addMode = value && isLocalPlayerOwner();
         updateWidgetVisibility();
-
         if (addMode) {
             setInitialFocus(addMemberBox);
         } else {
@@ -153,6 +156,7 @@ public class RestaurantHeartScreen extends Screen {
 
     public void applyPayload(OrderUpNetworking.HeartDataPayload payload) {
         this.data = payload;
+        clampMemberScroll();
         if (restaurantNameBox != null && !restaurantNameBox.isFocused()) {
             restaurantNameBox.setValue(payload.name());
         }
@@ -181,16 +185,17 @@ public class RestaurantHeartScreen extends Screen {
     }
 
     private void renderPanel(GuiGraphics graphics, int left, int top) {
-        int guiHeight = getGuiHeight();
-        graphics.fill(left, top, left + GUI_WIDTH, top + guiHeight, 0xFF4B2D1D);
-        graphics.fill(left + 3, top + 3, left + GUI_WIDTH - 3, top + guiHeight - 3, 0xFFD1A968);
-        graphics.fill(left + 7, top + 7, left + GUI_WIDTH - 7, top + guiHeight - 7, 0xFFF3E2BF);
-
+        graphics.fill(left, top, left + GUI_WIDTH, top + GUI_HEIGHT, 0xFF4B2D1D);
+        graphics.fill(left + 3, top + 3, left + GUI_WIDTH - 3, top + GUI_HEIGHT - 3, 0xFFD1A968);
+        graphics.fill(left + 7, top + 7, left + GUI_WIDTH - 7, top + GUI_HEIGHT - 7, 0xFFF3E2BF);
         graphics.fill(left + 7, top + 7, left + GUI_WIDTH - 7, top + 41, 0xFF8F4935);
         graphics.fill(left + 7, top + 39, left + GUI_WIDTH - 7, top + 42, 0xFF633124);
-        graphics.fill(left + 26, top + 35, left + GUI_WIDTH - 26, top + 36, 0xFFFFFFFF);
+
+        // Moved up so it sits directly beneath the restaurant name.
+        graphics.fill(left + 26, top + 32, left + GUI_WIDTH - 26, top + 33, 0xFFFFFFFF);
+
         graphics.fill(left + 16, top + 47, left + GUI_WIDTH - 16, top + 92, 0xFFE5CFA3);
-        graphics.fill(left + 16, top + 96, left + GUI_WIDTH - 16, top + guiHeight - 12, 0xFFE9D7B4);
+        graphics.fill(left + 16, top + 96, left + GUI_WIDTH - 16, top + GUI_HEIGHT - 12, 0xFFE9D7B4);
     }
 
     private void renderRestaurantProgress(GuiGraphics graphics, int left, int top) {
@@ -226,7 +231,6 @@ public class RestaurantHeartScreen extends Screen {
 
     private void renderCrew(GuiGraphics graphics, int left, int top) {
         drawWhiteShadow(graphics, Component.literal("Crew"), left + 27, top + 101, 0xFF4A2D18);
-
         String moneyText = MoneyFormatter.withDollarPrefix(data.money());
         drawWhiteShadow(
                 graphics,
@@ -241,22 +245,49 @@ public class RestaurantHeartScreen extends Screen {
         drawWhiteShadow(graphics, Component.literal("Founder"), left + 215, top + OWNER_ROW_Y + 5, 0xFF8B623E);
 
         List<OrderUpNetworking.MemberData> members = nonOwnerMembers();
-        for (int i = 0; i < members.size(); i++) {
-            OrderUpNetworking.MemberData member = members.get(i);
-            int rowY = top + MEMBER_ROWS_Y + i * ROW_STEP;
+        clampMemberScroll(members.size());
+
+        int listTop = top + MEMBER_ROWS_Y;
+        int listBottom = listTop + MEMBER_VIEW_HEIGHT;
+        graphics.enableScissor(left + 20, listTop, left + GUI_WIDTH - 17, listBottom);
+        int visibleEnd = Math.min(members.size(), memberScrollOffset + VISIBLE_MEMBER_ROWS);
+        for (int memberIndex = memberScrollOffset; memberIndex < visibleEnd; memberIndex++) {
+            OrderUpNetworking.MemberData member = members.get(memberIndex);
+            int visibleIndex = memberIndex - memberScrollOffset;
+            int rowY = listTop + visibleIndex * ROW_STEP;
             renderPlayerFace(graphics, member.id(), member.name(), left + 28, rowY, 18);
             drawWhiteShadow(graphics, member.name(), left + 53, rowY + 5, 0xFF3B2A1D);
-
             if (isLocalPlayerOwner()) {
                 drawWhiteShadow(graphics, "✕", left + 255, rowY + 5, 0xFF9D2F2F);
             }
         }
+        graphics.disableScissor();
+
+        renderMemberScrollbar(graphics, left, top, members.size());
 
         if (addMode) {
             int addRow = top + getAddRowY();
             graphics.fill(left + 28, addRow, left + 48, addRow + 20, 0xFF191919);
-            drawCenteredWhiteShadow(graphics, "?", left + 38, addRow + 6, 0xFFFFFFFF);
+
+            // Deliberately no shadow on the question mark.
+            String questionMark = "?";
+            int questionX = left + 38 - font.width(questionMark) / 2;
+            graphics.drawString(font, questionMark, questionX, addRow + 6, 0xFFFFFFFF, false);
         }
+    }
+
+    private void renderMemberScrollbar(GuiGraphics graphics, int left, int top, int memberCount) {
+        int maxScroll = Math.max(0, memberCount - VISIBLE_MEMBER_ROWS);
+        if (maxScroll == 0) return;
+
+        int trackY = top + MEMBER_ROWS_Y;
+        int trackHeight = MEMBER_VIEW_HEIGHT;
+        int thumbHeight = Math.max(6, trackHeight / memberCount);
+        int thumbTravel = trackHeight - thumbHeight;
+        int thumbY = trackY + (int) Math.round(thumbTravel * (memberScrollOffset / (double) maxScroll));
+
+        // Brown thumb only: no bright/white vertical track at the right edge.
+        graphics.fill(left + 280, thumbY, left + 283, thumbY + thumbHeight, 0xFF8B623E);
     }
 
     private List<OrderUpNetworking.MemberData> nonOwnerMembers() {
@@ -268,6 +299,15 @@ public class RestaurantHeartScreen extends Screen {
         }
         members.sort(Comparator.comparing(OrderUpNetworking.MemberData::name, String.CASE_INSENSITIVE_ORDER));
         return members;
+    }
+
+    private void clampMemberScroll() {
+        clampMemberScroll(nonOwnerMembers().size());
+    }
+
+    private void clampMemberScroll(int memberCount) {
+        int maxScroll = Math.max(0, memberCount - VISIBLE_MEMBER_ROWS);
+        memberScrollOffset = Math.max(0, Math.min(memberScrollOffset, maxScroll));
     }
 
     private void renderPlayerFace(GuiGraphics graphics, UUID id, String name, int x, int y, int size) {
@@ -305,6 +345,16 @@ public class RestaurantHeartScreen extends Screen {
             restaurantNameBox.setFocused(false);
             return true;
         }
+
+        boolean typingInTextBox = (restaurantNameBox != null && restaurantNameBox.isFocused())
+                || (addMemberBox != null && addMemberBox.isFocused());
+        if (!typingInTextBox
+                && minecraft != null
+                && minecraft.options.keyInventory.matches(keyCode, scanCode)) {
+            onClose();
+            return true;
+        }
+
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
@@ -326,12 +376,15 @@ public class RestaurantHeartScreen extends Screen {
 
         if (button == 0 && isLocalPlayerOwner() && !addMode) {
             List<OrderUpNetworking.MemberData> members = nonOwnerMembers();
+            clampMemberScroll(members.size());
 
-            for (int i = 0; i < members.size(); i++) {
-                OrderUpNetworking.MemberData member = members.get(i);
-                int rowY = top + MEMBER_ROWS_Y + i * ROW_STEP;
+            int visibleEnd = Math.min(members.size(), memberScrollOffset + VISIBLE_MEMBER_ROWS);
+            for (int memberIndex = memberScrollOffset; memberIndex < visibleEnd; memberIndex++) {
+                int visibleIndex = memberIndex - memberScrollOffset;
+                int rowY = top + MEMBER_ROWS_Y + visibleIndex * ROW_STEP;
                 if (mouseX >= left + 246 && mouseX <= left + 278
                         && mouseY >= rowY && mouseY <= rowY + 18) {
+                    OrderUpNetworking.MemberData member = members.get(memberIndex);
                     PacketDistributor.sendToServer(
                             new OrderUpNetworking.RemoveMemberPayload(data.heartPos(), member.id())
                     );
@@ -343,12 +396,31 @@ public class RestaurantHeartScreen extends Screen {
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
-    private int getGuiHeight() {
-        return Math.max(MIN_GUI_HEIGHT, getAddRowY() + 32);
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        int left = getLeft();
+        int top = getTop();
+        boolean overMemberList = mouseX >= left + 20
+                && mouseX <= left + GUI_WIDTH - 17
+                && mouseY >= top + MEMBER_ROWS_Y
+                && mouseY < top + MEMBER_ROWS_Y + MEMBER_VIEW_HEIGHT;
+
+        if (overMemberList && scrollY != 0.0D) {
+            int maxScroll = Math.max(0, nonOwnerMembers().size() - VISIBLE_MEMBER_ROWS);
+            int direction = scrollY > 0.0D ? -1 : 1;
+            int nextOffset = Math.max(0, Math.min(memberScrollOffset + direction, maxScroll));
+            if (nextOffset != memberScrollOffset) {
+                memberScrollOffset = nextOffset;
+                return true;
+            }
+        }
+
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
     private int getAddRowY() {
-        return MEMBER_ROWS_Y + nonOwnerMembers().size() * ROW_STEP;
+        int visibleMemberCount = Math.min(nonOwnerMembers().size(), VISIBLE_MEMBER_ROWS);
+        return MEMBER_ROWS_Y + visibleMemberCount * ROW_STEP;
     }
 
     private int getLeft() {
@@ -356,7 +428,7 @@ public class RestaurantHeartScreen extends Screen {
     }
 
     private int getTop() {
-        return (height - getGuiHeight()) / 2;
+        return (height - GUI_HEIGHT) / 2;
     }
 
     private boolean isLocalPlayerOwner() {

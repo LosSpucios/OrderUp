@@ -8,7 +8,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.spucio.orderup.blockentity.MenuBoardBlockEntity;
 import net.spucio.orderup.network.OrderUpNetworking;
@@ -18,7 +17,6 @@ import java.util.List;
 
 public class MenuBoardScreen extends Screen {
     private static final int GUI_WIDTH = 224;
-    private static final int JEI_MIN_RIGHT_SPACE = 76;
     private static final int GUI_HEIGHT = 286;
     private static final int MENU_SLOT_SIZE = 22;
     private static final int INVENTORY_Y = 183;
@@ -40,7 +38,6 @@ public class MenuBoardScreen extends Screen {
     public final void applyPayload(OrderUpNetworking.MenuDataPayload payload) {
         this.data = payload;
         menuStacks.clear();
-
         int count = Math.min(payload.itemIds().size(), MenuBoardBlockEntity.SLOT_COUNT);
         for (int i = 0; i < count; i++) {
             String idString = payload.itemIds().get(i);
@@ -48,7 +45,6 @@ public class MenuBoardScreen extends Screen {
                 menuStacks.add(ItemStack.EMPTY);
                 continue;
             }
-
             ResourceLocation id = ResourceLocation.tryParse(idString);
             Item item = id == null ? null : BuiltInRegistries.ITEM.get(id);
             menuStacks.add(item == null || item == net.minecraft.world.item.Items.AIR
@@ -73,7 +69,6 @@ public class MenuBoardScreen extends Screen {
         int top = (height - GUI_HEIGHT) / 2;
 
         renderPanel(graphics, left, top);
-
         drawCenteredNoShadow(
                 graphics,
                 Component.literal("RESTAURANT MENU"),
@@ -108,7 +103,6 @@ public class MenuBoardScreen extends Screen {
         );
 
         drawWhiteShadow(graphics, Component.literal("Inventory"), left + 36, top + 171, 0xFF553824);
-
         if (minecraft != null && minecraft.player != null) {
             int inventoryX = inventoryX(left);
             int inventoryY = top + INVENTORY_Y;
@@ -133,11 +127,9 @@ public class MenuBoardScreen extends Screen {
     }
 
     private void renderPanel(GuiGraphics graphics, int left, int top) {
-        // Dark wood frame, warm parchment body and a colored restaurant header.
         graphics.fill(left, top, left + GUI_WIDTH, top + GUI_HEIGHT, 0xFF4B2D1D);
         graphics.fill(left + 3, top + 3, left + GUI_WIDTH - 3, top + GUI_HEIGHT - 3, 0xFFD1A968);
         graphics.fill(left + 7, top + 7, left + GUI_WIDTH - 7, top + GUI_HEIGHT - 7, 0xFFF3E2BF);
-
         graphics.fill(left + 7, top + 7, left + GUI_WIDTH - 7, top + 31, 0xFF9C4F38);
         graphics.fill(left + 7, top + 30, left + GUI_WIDTH - 7, top + 33, 0xFF6E3325);
 
@@ -152,7 +144,6 @@ public class MenuBoardScreen extends Screen {
         boolean duplicate = !draggedStack.isEmpty() && isItemAlreadyInMenu(draggedStack, slot);
         boolean validDrop = hovered && validType && !duplicate;
         boolean invalidDrop = hovered && !draggedStack.isEmpty() && !validDrop;
-
         int frame = validDrop
                 ? 0xFF5D9C4B
                 : invalidDrop
@@ -185,9 +176,17 @@ public class MenuBoardScreen extends Screen {
     }
 
     @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (minecraft != null && minecraft.options.keyInventory.matches(keyCode, scanCode)) {
+            onClose();
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         int menuSlot = getMenuSlotAt(mouseX, mouseY);
-
         if (button == 1 && menuSlot >= 0) {
             PacketDistributor.sendToServer(
                     new OrderUpNetworking.SetMenuSlotPayload(data.menuPos(), menuSlot, "")
@@ -207,7 +206,6 @@ public class MenuBoardScreen extends Screen {
                 inventoryX(left),
                 top + INVENTORY_Y
         );
-
         if (inventorySlot >= 0) {
             ItemStack stack = minecraft.player.getInventory().getItem(inventorySlot);
             if (!stack.isEmpty()) {
@@ -229,7 +227,6 @@ public class MenuBoardScreen extends Screen {
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (button == 0 && !draggedStack.isEmpty()) {
             int targetSlot = getMenuSlotAt(mouseX, mouseY);
-
             if (targetSlot >= 0
                     && isValidForSlot(draggedStack, targetSlot)
                     && !isItemAlreadyInMenu(draggedStack, targetSlot)) {
@@ -238,7 +235,6 @@ public class MenuBoardScreen extends Screen {
                         new OrderUpNetworking.SetMenuSlotPayload(data.menuPos(), targetSlot, id)
                 );
             }
-
             draggedStack = ItemStack.EMPTY;
             return true;
         }
@@ -255,13 +251,11 @@ public class MenuBoardScreen extends Screen {
     private int getMenuSlotAt(double mouseX, double mouseY) {
         int left = getGuiLeft();
         int top = (height - GUI_HEIGHT) / 2;
-
         for (int i = 0; i < MenuBoardBlockEntity.FOOD_SLOTS; i++) {
             int x = foodSlotX(left, i);
             int y = top + 53;
             if (isInside(mouseX, mouseY, x, y, MENU_SLOT_SIZE, MENU_SLOT_SIZE)) return i;
         }
-
         for (int i = 0; i < MenuBoardBlockEntity.DRINK_SLOTS; i++) {
             int x = drinkSlotX(left, i);
             int y = top + 110;
@@ -274,16 +268,7 @@ public class MenuBoardScreen extends Screen {
     }
 
     private int getGuiLeft() {
-        int centered = (width - GUI_WIDTH) / 2;
-        if (!ModList.get().isLoaded("jei")) {
-            return centered;
-        }
-
-        // JEI renders only in the area to the right of guiRight(). At large GUI
-        // scales a centered 224px menu leaves too little room, so move the menu
-        // left just enough for the ingredient grid and its search bar.
-        int leftThatLeavesJeiSpace = width - GUI_WIDTH - JEI_MIN_RIGHT_SPACE;
-        return Math.max(0, Math.min(centered, leftThatLeavesJeiSpace));
+        return (width - GUI_WIDTH) / 2;
     }
 
     private int inventoryX(int left) {
@@ -383,7 +368,6 @@ public class MenuBoardScreen extends Screen {
 
     public void acceptJeiIngredient(ItemStack stack, int slot) {
         if (!canAcceptJeiIngredient(stack, slot)) return;
-
         ItemStack ghostStack = stack.copyWithCount(1);
         menuStacks.set(slot, ghostStack);
         String id = BuiltInRegistries.ITEM.getKey(ghostStack.getItem()).toString();
