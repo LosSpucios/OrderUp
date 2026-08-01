@@ -8,6 +8,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.spucio.orderup.blockentity.MenuBoardBlockEntity;
 import net.spucio.orderup.network.OrderUpNetworking;
@@ -16,7 +17,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class MenuBoardScreen extends Screen {
-    private static final int GUI_WIDTH = 240;
+    private static final int GUI_WIDTH = 224;
+    private static final int JEI_MIN_RIGHT_SPACE = 76;
     private static final int GUI_HEIGHT = 286;
     private static final int MENU_SLOT_SIZE = 22;
     private static final int INVENTORY_Y = 183;
@@ -67,12 +69,12 @@ public class MenuBoardScreen extends Screen {
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         graphics.fill(0, 0, width, height, 0x66000000);
 
-        int left = (width - GUI_WIDTH) / 2;
+        int left = getGuiLeft();
         int top = (height - GUI_HEIGHT) / 2;
 
         renderPanel(graphics, left, top);
 
-        drawCenteredWhiteShadow(
+        drawCenteredNoShadow(
                 graphics,
                 Component.literal("RESTAURANT MENU"),
                 left + GUI_WIDTH / 2,
@@ -197,7 +199,7 @@ public class MenuBoardScreen extends Screen {
             return super.mouseClicked(mouseX, mouseY, button);
         }
 
-        int left = (width - GUI_WIDTH) / 2;
+        int left = getGuiLeft();
         int top = (height - GUI_HEIGHT) / 2;
         int inventorySlot = VanillaInventoryPanel.getInventorySlotAt(
                 mouseX,
@@ -251,7 +253,7 @@ public class MenuBoardScreen extends Screen {
     }
 
     private int getMenuSlotAt(double mouseX, double mouseY) {
-        int left = (width - GUI_WIDTH) / 2;
+        int left = getGuiLeft();
         int top = (height - GUI_HEIGHT) / 2;
 
         for (int i = 0; i < MenuBoardBlockEntity.FOOD_SLOTS; i++) {
@@ -269,6 +271,19 @@ public class MenuBoardScreen extends Screen {
         }
 
         return -1;
+    }
+
+    private int getGuiLeft() {
+        int centered = (width - GUI_WIDTH) / 2;
+        if (!ModList.get().isLoaded("jei")) {
+            return centered;
+        }
+
+        // JEI renders only in the area to the right of guiRight(). At large GUI
+        // scales a centered 224px menu leaves too little room, so move the menu
+        // left just enough for the ingredient grid and its search bar.
+        int leftThatLeavesJeiSpace = width - GUI_WIDTH - JEI_MIN_RIGHT_SPACE;
+        return Math.max(0, Math.min(centered, leftThatLeavesJeiSpace));
     }
 
     private int inventoryX(int left) {
@@ -304,7 +319,7 @@ public class MenuBoardScreen extends Screen {
     }
 
     public int getGuiLeftForJei() {
-        return (width - GUI_WIDTH) / 2;
+        return getGuiLeft();
     }
 
     public int getGuiTopForJei() {
@@ -375,6 +390,17 @@ public class MenuBoardScreen extends Screen {
         PacketDistributor.sendToServer(
                 new OrderUpNetworking.SetMenuSlotPayload(data.menuPos(), slot, id)
         );
+    }
+
+    private void drawCenteredNoShadow(
+            GuiGraphics graphics,
+            Component text,
+            int centerX,
+            int y,
+            int color
+    ) {
+        int x = centerX - font.width(text) / 2;
+        graphics.drawString(font, text, x, y, color, false);
     }
 
     private void drawWhiteShadow(GuiGraphics graphics, Component text, int x, int y, int color) {

@@ -13,6 +13,7 @@ import net.minecraft.network.chat.Component;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.spucio.orderup.network.OrderUpNetworking;
 import net.spucio.orderup.util.MoneyFormatter;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -32,7 +33,6 @@ public class RestaurantHeartScreen extends Screen {
     private Button addButton;
     private Button confirmAddButton;
     private Button cancelAddButton;
-    private Button saveNameButton;
     private boolean addMode;
 
     public RestaurantHeartScreen(OrderUpNetworking.HeartDataPayload data) {
@@ -51,25 +51,17 @@ public class RestaurantHeartScreen extends Screen {
                 font,
                 0,
                 0,
-                226,
-                20,
+                240,
+                18,
                 Component.translatable("screen.orderup.restaurant_name")
         );
         restaurantNameBox.setValue(data.name());
         restaurantNameBox.setMaxLength(32);
+        restaurantNameBox.setBordered(false);
+        restaurantNameBox.setTextColor(0xFFFFFFFF);
+        restaurantNameBox.setTextColorUneditable(0xFFD8D8D8);
         restaurantNameBox.setEditable(isLocalPlayerOwner());
         addRenderableWidget(restaurantNameBox);
-
-        saveNameButton = Button.builder(Component.literal("✓"), button ->
-                        PacketDistributor.sendToServer(
-                                new OrderUpNetworking.RenameRestaurantPayload(
-                                        data.heartPos(),
-                                        restaurantNameBox.getValue()
-                                )
-                        ))
-                .bounds(0, 0, 30, 20)
-                .build();
-        addRenderableWidget(saveNameButton);
 
         addButton = Button.builder(Component.literal("+"), button -> setAddMode(true))
                 .bounds(0, 0, 20, 20)
@@ -106,10 +98,7 @@ public class RestaurantHeartScreen extends Screen {
         int top = getTop();
         int addRow = top + getAddRowY();
 
-        restaurantNameBox.setX(left + 18);
-        restaurantNameBox.setY(top + 15);
-        saveNameButton.setX(left + 250);
-        saveNameButton.setY(top + 15);
+        repositionRestaurantNameBox(left, top);
 
         addButton.setX(left + 28);
         addButton.setY(addRow);
@@ -121,10 +110,20 @@ public class RestaurantHeartScreen extends Screen {
         cancelAddButton.setY(addRow);
     }
 
+    private void repositionRestaurantNameBox(int left, int top) {
+        if (restaurantNameBox == null) return;
+
+        int maxWidth = GUI_WIDTH - 52;
+        int textWidth = font.width(restaurantNameBox.getValue()) + 8;
+        int fieldWidth = Math.max(24, Math.min(maxWidth, textWidth));
+        restaurantNameBox.setWidth(fieldWidth);
+        restaurantNameBox.setX(left + GUI_WIDTH / 2 - fieldWidth / 2);
+        restaurantNameBox.setY(top + 16);
+    }
+
     private void updateWidgetVisibility() {
         boolean owner = isLocalPlayerOwner();
         restaurantNameBox.setEditable(owner);
-        saveNameButton.visible = owner;
         addButton.visible = owner && !addMode;
         addMemberBox.visible = owner && addMode;
         confirmAddButton.visible = owner && addMode;
@@ -176,6 +175,7 @@ public class RestaurantHeartScreen extends Screen {
         renderPanel(graphics, left, top);
         renderRestaurantProgress(graphics, left, top);
         renderCrew(graphics, left, top);
+        repositionRestaurantNameBox(left, top);
 
         super.render(graphics, mouseX, mouseY, partialTick);
     }
@@ -188,6 +188,7 @@ public class RestaurantHeartScreen extends Screen {
 
         graphics.fill(left + 7, top + 7, left + GUI_WIDTH - 7, top + 41, 0xFF8F4935);
         graphics.fill(left + 7, top + 39, left + GUI_WIDTH - 7, top + 42, 0xFF633124);
+        graphics.fill(left + 26, top + 35, left + GUI_WIDTH - 26, top + 36, 0xFFFFFFFF);
         graphics.fill(left + 16, top + 47, left + GUI_WIDTH - 16, top + 92, 0xFFE5CFA3);
         graphics.fill(left + 16, top + 96, left + GUI_WIDTH - 16, top + guiHeight - 12, 0xFFE9D7B4);
     }
@@ -281,11 +282,49 @@ public class RestaurantHeartScreen extends Screen {
         }
     }
 
+    private void submitRestaurantName() {
+        if (!isLocalPlayerOwner() || restaurantNameBox == null) return;
+
+        String name = restaurantNameBox.getValue().strip();
+        if (name.isBlank()) {
+            name = "My Restaurant";
+            restaurantNameBox.setValue(name);
+        }
+
+        PacketDistributor.sendToServer(
+                new OrderUpNetworking.RenameRestaurantPayload(data.heartPos(), name)
+        );
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (restaurantNameBox != null
+                && restaurantNameBox.isFocused()
+                && (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER)) {
+            submitRestaurantName();
+            restaurantNameBox.setFocused(false);
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        int left = getLeft();
+        int top = getTop();
+
+        if (button == 0
+                && isLocalPlayerOwner()
+                && mouseX >= left + 26
+                && mouseX <= left + GUI_WIDTH - 26
+                && mouseY >= top + 11
+                && mouseY <= top + 37) {
+            setFocused(restaurantNameBox);
+            restaurantNameBox.setFocused(true);
+            return true;
+        }
+
         if (button == 0 && isLocalPlayerOwner() && !addMode) {
-            int left = getLeft();
-            int top = getTop();
             List<OrderUpNetworking.MemberData> members = nonOwnerMembers();
 
             for (int i = 0; i < members.size(); i++) {
